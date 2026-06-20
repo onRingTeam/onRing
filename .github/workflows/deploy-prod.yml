@@ -1,0 +1,31 @@
+name: Deploy Prod
+
+on:
+  push:
+    branches: [main]
+    paths: ['backend/**']
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: ./gradlew clean bootJar
+
+      - name: Deploy
+        run: |
+          set -e
+          SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          DEST=/home/minhyeok/app/knou-prod
+          JAR=$(ls build/libs/*.jar | grep -v plain)
+          cp "$JAR" "$DEST/knou-api-prod-$SHA.jar"
+          ln -sfn "$DEST/knou-api-prod-$SHA.jar" "$DEST/app.jar"
+          # 최근 5개 버전만 보관
+          ls -1t "$DEST"/knou-api-prod-*.jar | tail -n +6 | xargs -r rm -f
+          sudo systemctl restart knou-prod

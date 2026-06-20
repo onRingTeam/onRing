@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: knou-api
+  profiles:
+    active: local
