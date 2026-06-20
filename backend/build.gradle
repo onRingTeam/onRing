@@ -6,7 +6,7 @@ plugins {
 	id 'org.jetbrains.kotlin.plugin.jpa' version '1.9.25'
 }
 
-group = 'com.example'
+group = 'com.knou'
 version = '0.0.1-SNAPSHOT'
 
 java {
@@ -44,8 +44,4 @@ allOpen {
 
 tasks.named('test') {
 	useJUnitPlatform()
-}
-
-tasks.named('bootJar') {
-	archiveBaseName = 'knou-api'
 }

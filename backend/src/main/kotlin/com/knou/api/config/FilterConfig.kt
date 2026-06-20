@@ -9,12 +9,15 @@ import jakarta.servlet.ServletRequest
 import jakarta.servlet.ServletResponse
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
+import org.slf4j.LoggerFactory
 import java.io.IOException
 
 @Configuration
 class FilterConfig(
     private val whiteListProperties: WhiteListProperties
 ) {
+
+    private val log = LoggerFactory.getLogger(FilterConfig::class.java)
 
     @Bean
     fun ipRestrictionFilter(): FilterRegistrationBean<Filter> {
@@ -35,9 +38,11 @@ class FilterConfig(
                     return
                 }
 
-                if (clientIp(req) in whiteListProperties.allowedIps) {
+                val ip = clientIp(req)
+                if (ip in whiteListProperties.allowedIps) {
                     chain.doFilter(request, response)
                 } else {
+                    log.warn("Access denied for ip={} uri={} (allowed={})", ip, req.requestURI, whiteListProperties.allowedIps)
                     res.sendError(HttpServletResponse.SC_FORBIDDEN, "Access denied")
                 }
             }
