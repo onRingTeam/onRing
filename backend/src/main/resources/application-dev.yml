@@ -1,0 +1,29 @@
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/knou_dev?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+
+server:
+  port: 19999
+
+logging:
+  level:
+    root: INFO
+    com.knou.api: DEBUG
+
+
+whitelist:
+  allowed-ips:
+    - 127.0.0.1
+    - ::1
+    - 100.122.135.63
+    - 103.246.172.52
+    # 공인 IP 추가 (예시)
+    # - 1.2.3.4
+    # - 5.6.7.8
