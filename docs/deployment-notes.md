@@ -84,3 +84,25 @@ sudo systemctl restart knou-dev knou-prod
 - 헬스체크용 actuator 의존성 추가 (`spring-boot-starter-actuator`, `/actuator/health`)
 - `deploy-prod.yml`을 blue-green 스위치 스크립트로 교체: 놀고있는 색에 새 jar 띄움 → 헬스체크 통과 대기 → 프록시 전환 → 옛 인스턴스 종료
 - 앱 비즈니스 로직은 변경 불필요
+
+---
+
+## TODO: 홈서버 이전/장애 시 클라우드 수동 우회
+
+홈서버를 옮기거나 장애로 죽었을 때, NCP/AWS 인스턴스에 임시로 올리고 origin만 클라우드로 수동 전환. 평소엔 클라우드 안 띄워서 상시 비용 0.
+
+> 전제: 자동 failover(Cloudflare Load Balancer)는 유료라 안 씀. **수동 전환** 방식.
+> DB를 Firebase 등 외부 매니지드로 빼두면 홈/클라우드가 같은 DB를 봐서 우회가 깔끔함 (로컬 MySQL이면 우회 시 DB 접근 끊기니 주의).
+
+전환 절차:
+1. 클라우드 인스턴스 생성 → JDK 21 설치 (`sudo apt install -y openjdk-21-jdk`)
+2. systemd 서비스 셋업 (위 "현재 구성 요약"/홈서버 셋업과 동일하게 `knou-prod` 등록, 포트/프로파일 동일)
+3. 최신 jar 배포:
+   - 빠른 방법: 로컬에서 `./gradlew bootJar` 후 `scp build/libs/knou-api-*.jar 클라우드:/.../app.jar`
+   - 또는 클라우드에 self-hosted runner 하나 더 설치(라벨 구분)해서 자동배포
+4. Cloudflare에서 origin을 클라우드로 전환 (둘 중 하나):
+   - **터널 방식**: 클라우드에 cloudflared 설치 → 같은 터널/새 터널에 연결하고 ingress를 클라우드 origin으로
+   - **DNS 방식**: `prodKnou`/`devKnou` A 레코드를 클라우드 공인 IP로 변경 (이 경우 IP 화이트리스트가 CF-Connecting-IP 대신 어떻게 동작하는지 점검 필요)
+5. 홈서버 복구되면 origin을 다시 홈서버로 되돌리고, 클라우드 인스턴스 내림(비용 절감)
+
+권장: 자동 failover가 꼭 필요해지면 그때 Cloudflare Load Balancer(유료, health check 기반 home→cloud 자동 전환) 검토.
