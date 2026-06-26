@@ -9,3 +9,8 @@ spring:
       - optional:file:backend/.env[.properties]
   profiles:
     active: local
+
+# JWT 설정 (HS256). 운영에서는 반드시 JWT_SECRET 환경변수로 주입.
+jwt:
+  secret: ${JWT_SECRET:onring-local-dev-secret-key-please-change-0123456789}
+  access-token-validity-seconds: 3600   # 1시간

@@ -1,5 +1,6 @@
 package com.knou.api.config
 
+import com.knou.api.utils.ActiveProfileProvider
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.boot.web.servlet.FilterRegistrationBean
@@ -33,7 +34,7 @@ class FilterConfig(
                 val req = request as HttpServletRequest
                 val res = response as HttpServletResponse
 
-                if (!com.knou.api.utils.ActiveProfileProvider.isDev()) {
+                if (!ActiveProfileProvider.isDev()) {
                     chain.doFilter(request, response)
                     return
                 }
