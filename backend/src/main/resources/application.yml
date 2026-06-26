@@ -1,5 +1,11 @@
 spring:
   application:
     name: knou-api
+  # .env 파일을 환경변수처럼 로드 (DB_USERNAME/DB_PASSWORD 등)
+  # optional 이라 파일이 없는 운영 환경(실제 env 주입)에서는 무시됨
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:backend/.env[.properties]
   profiles:
     active: local
