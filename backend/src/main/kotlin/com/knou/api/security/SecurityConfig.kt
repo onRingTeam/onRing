@@ -54,6 +54,8 @@ class SecurityConfig {
     fun devSecurityFilterChain(http: HttpSecurity): SecurityFilterChain {
         http
             .csrf { it.disable() }
+            // 기본값(DENY) 이면 같은 출처 iframe(테스트 페이지)도 차단되므로 sameOrigin 으로 완화
+            .headers { it.frameOptions { fo -> fo.sameOrigin() } }
             .authorizeHttpRequests { it.anyRequest().permitAll() }
 
         return http.build()
