@@ -1,4 +1,4 @@
-import { create } from 'zustand';
+﻿import { create } from 'zustand';
 import type { CaptionSize, SettingsState } from '@/types/settings';
 import type { LangCode } from '@/types/meeting';
 

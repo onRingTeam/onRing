@@ -1,3 +1,5 @@
+export type LangCode = 'ko' | 'en' | 'ja' | 'zh';
+
 export interface Speaker {
   id: string;
   name: string;
@@ -23,5 +25,3 @@ export interface MeetingRecord {
   summary?: string;
   language: LangCode;
 }
-
-export type LangCode = 'ko' | 'en' | 'ja' | 'zh';

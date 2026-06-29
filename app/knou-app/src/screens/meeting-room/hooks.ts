@@ -8,7 +8,7 @@ export function useMeetingSession() {
   const captions = useMeetingStore((s) => s.captions);
   const clearMeeting = useMeetingStore((s) => s.clearMeeting);
 
-  const elapsed = useElapsed(startedAt);
+  const elapsed = useElapsed(startedAt ?? null);
 
   const endMeeting = (finalCaptions: CaptionItem[]) => {
     useMeetingStore.setState({ captions: finalCaptions });
