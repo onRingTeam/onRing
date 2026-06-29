@@ -1,4 +1,4 @@
-import type { LangCode } from '@/types/meeting';
+﻿import type { LangCode } from '@/types/meeting';
 
 export const LANG_OPTIONS: LangCode[] = ['ko', 'en', 'ja', 'zh'];
 

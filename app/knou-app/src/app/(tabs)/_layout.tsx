@@ -11,6 +11,7 @@ export default function TabsLayout() {
       {/* 탭바 유지하되 탭에 노출되지 않는 라우트 (href:null) */}
       <Tabs.Screen name="meeting" options={{ href: null }} />
       <Tabs.Screen name="meeting-summary" options={{ href: null }} />
+      <Tabs.Screen name="notes/[id]" options={{ href: null }} />
     </Tabs>
   );
 }

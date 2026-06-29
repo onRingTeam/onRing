@@ -1,17 +1,17 @@
 // 1. Import
-import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, View, TouchableOpacity, TextInput } from 'react-native';
+import { useState } from 'react';
+import { ScrollView, View, TouchableOpacity, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { MeetingCard } from '@/components/ui/meeting-card';
-import { Colors, BottomTabInset, Spacing } from '@/constants/theme';
+import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useMeetingStore, useUiStore, useSettingsStore } from '@/store';
+import { useMeetingStore, useUiStore, useAuthStore } from '@/store';
 import type { MeetingRecord } from '@/types/meeting';
+import { useRecentMeetings } from './hooks';
+import { styles } from './home-screen.styles';
 
 // 2. 페이지(함수) 시작
 export function HomeScreen() {
@@ -19,19 +19,24 @@ export function HomeScreen() {
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
 
-  // 3. useState (페이지 내부 상태)
-  const [recentMeetings, setRecentMeetings] = useState<MeetingRecord[]>([]);
+  // 3. useState (페이지 내부 로컬 상태 )
   const [joinCode, setJoinCode] = useState('');
-  const [isLoadingMeetings, setIsLoadingMeetings] = useState(false);
+  const [greeting] = useState('안녕하세요,');
 
   // 4. 전역 상태 & 비동기 서비스
-  // - Zustand: 회의 중 상태, UI 모달 제어, 사용자 설정
+  // - Zustand: 로그인 사용자, 회의 중 상태, UI 모달 제어
+  const user = useAuthStore((s) => s.user);
   const inMeeting = useMeetingStore((s) => s.inMeeting);
   const setShowCreateSheet = useUiStore((s) => s.setShowCreateSheet);
-  const myLanguage = useSettingsStore((s) => s.myLanguage);
+  // - TanStack Query: 최근 회의 목록 (서버 응답 매핑된 결과)
+  const { data: recentMeetings = [], isLoading } = useRecentMeetings(3);
 
   // 5. 함수들
   const handleStartMeeting = () => {
+    if (inMeeting) {
+      router.push('/(tabs)/meeting');
+      return;
+    }
     setShowCreateSheet(true);
   };
 
@@ -48,75 +53,85 @@ export function HomeScreen() {
     });
   };
 
-  const loadRecentMeetings = async () => {
-    setIsLoadingMeetings(true);
-    try {
-      // TODO: API 호출 - 최근 회의 목록 조회 (limit: 4)
-      const mockMeetings: MeetingRecord[] = [
-        {
-          id: '1',
-          title: '팀 회의',
-          code: 'ABC123',
-          startedAt: Date.now() - 86400000,
-          durationSeconds: 1500,
-          speakers: [],
-          captions: [],
-          language: myLanguage,
-        },
-      ];
-      setRecentMeetings(mockMeetings);
-    } catch (error) {
-      console.error('최근 회의 로드 실패:', error);
-    } finally {
-      setIsLoadingMeetings(false);
-    }
+  const handleSeeAllNotes = () => {
+    router.push('/(tabs)/notes');
   };
 
-  // 6. useEffect
-  useEffect(() => {
-    loadRecentMeetings();
-  }, [myLanguage]);
-
-  // 7. Return (UI + 함수/이벤트 조합)
+  // 6. Return (UI + 함수/이벤트 조합)
   return (
-    <ThemedView style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <SafeAreaView edges={['top']} style={styles.safe}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          {/* 헤더 */}
-          <View style={styles.header}>
-            <ThemedText type="subtitle">OnRing</ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
-              {inMeeting ? '📞 회의 중' : '준비 완료'}
-            </ThemedText>
-          </View>
-
-          {/* 빠른 시작 버튼 */}
-          <TouchableOpacity
-            style={[styles.quickStartBtn, { backgroundColor: colors.primary }]}
-            onPress={handleStartMeeting}
-            activeOpacity={0.7}
+        {/* 헤더 - 사용자 인사 */}
+        <View
+          style={styles.header}
+          accessible
+          accessibilityRole="header"
+          accessibilityLabel={`${greeting} ${user?.name ?? '사용자'} 님`}
+        >
+          <View
+            style={[styles.avatar, { backgroundColor: colors.primary }]}
+            accessibilityElementsHidden
+            importantForAccessibility="no"
           >
-            <Feather name="play-circle" size={20} color="#ffffff" />
-            <ThemedText style={styles.quickStartText}>새 회의 시작</ThemedText>
+            <ThemedText style={styles.avatarText}>OR</ThemedText>
+          </View>
+          <View>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.greetingLabel}>
+              {greeting}
+            </ThemedText>
+            <ThemedText type="smallBold">{user?.name ?? '사용자'} 님</ThemedText>
+          </View>
+        </View>
+
+        <ScrollView
+          contentContainerStyle={styles.content}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Hero 카드 - 새 회의 시작 */}
+          <TouchableOpacity
+            style={[styles.heroCard, { backgroundColor: colors.primary }]}
+            onPress={handleStartMeeting}
+            activeOpacity={0.9}
+            accessibilityRole="button"
+            accessibilityLabel="새 회의 만들기"
+            accessibilityHint={
+              inMeeting ? '진행 중인 회의실로 이동합니다' : '새 회의 생성 화면을 엽니다'
+            }
+          >
+            <ThemedText style={styles.heroEyebrow}>지금 바로 시작</ThemedText>
+            <ThemedText style={styles.heroTitle}>새 회의 만들기</ThemedText>
+            <View style={styles.heroPill}>
+              <Feather name="plus" size={14} color="#ffffff" />
+              <ThemedText style={styles.heroPillText}>회의 시작</ThemedText>
+            </View>
           </TouchableOpacity>
 
           {/* 코드로 참여 */}
-          <View style={styles.joinSection}>
-            <ThemedText type="smallBold">코드로 참여</ThemedText>
-            <View style={[styles.codeInputWrapper, { borderColor: colors.border }]}>
+          <View style={[styles.card, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.cardLabel}>
+              코드로 참여
+            </ThemedText>
+            <View style={styles.joinRow}>
               <TextInput
-                style={[styles.codeInput, { color: colors.text }]}
-                placeholder="회의 코드 입력"
+                style={[styles.codeInput, { backgroundColor: colors.backgroundSelected, color: colors.text }]}
+                placeholder="회의 코드 입력..."
                 placeholderTextColor={colors.textSecondary}
                 value={joinCode}
                 onChangeText={setJoinCode}
                 maxLength={6}
+                autoCapitalize="characters"
+                accessibilityLabel="회의 코드 입력"
+                accessibilityHint="참여할 회의의 코드를 입력하세요"
               />
               <TouchableOpacity
-                style={[styles.joinBtn, { backgroundColor: colors.primary }]}
+                style={[styles.joinBtn, { backgroundColor: colors.accent }]}
                 onPress={handleJoinByCode}
                 disabled={!joinCode.trim()}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="회의 참여"
+                accessibilityHint="입력한 코드로 회의에 참여합니다"
+                accessibilityState={{ disabled: !joinCode.trim() }}
               >
                 <ThemedText style={styles.joinBtnText}>참여</ThemedText>
               </TouchableOpacity>
@@ -126,18 +141,28 @@ export function HomeScreen() {
           {/* 최근 회의 */}
           <View style={styles.recentSection}>
             <View style={styles.recentHeader}>
-              <ThemedText type="smallBold">최근 회의</ThemedText>
+              <ThemedText
+                type="small"
+                themeColor="textSecondary"
+                style={styles.recentTitle}
+                accessibilityRole="header"
+              >
+                최근 회의
+              </ThemedText>
               {recentMeetings.length > 0 && (
-                <TouchableOpacity onPress={() => router.push('/(tabs)/notes')}>
-                  <ThemedText style={{ color: colors.primary, fontSize: 12 }}>
-                    전체 보기 →
-                  </ThemedText>
+                <TouchableOpacity
+                  onPress={handleSeeAllNotes}
+                  accessibilityRole="button"
+                  accessibilityLabel="전체 보기"
+                  accessibilityHint="전체 회의록 목록으로 이동합니다"
+                >
+                  <ThemedText style={[styles.seeAll, { color: colors.accent }]}>전체 보기</ThemedText>
                 </TouchableOpacity>
               )}
             </View>
 
-            {isLoadingMeetings ? (
-              <ThemedText type="small" themeColor="textSecondary">
+            {isLoading ? (
+              <ThemedText type="small" themeColor="textSecondary" accessibilityLabel="회의 목록 로드 중">
                 로드 중...
               </ThemedText>
             ) : recentMeetings.length === 0 ? (
@@ -148,85 +173,49 @@ export function HomeScreen() {
               </View>
             ) : (
               <View style={styles.meetingsList}>
-                {recentMeetings.map((meeting) => (
-                  <TouchableOpacity
-                    key={meeting.id}
-                    onPress={() => handleSelectMeeting(meeting)}
-                    activeOpacity={0.7}
-                  >
-                    <MeetingCard meeting={meeting} />
-                  </TouchableOpacity>
-                ))}
+                {recentMeetings.map((meeting) => {
+                  const durationMin = Math.floor(meeting.durationSeconds / 60);
+                  const dateStr = new Date(meeting.startedAt).toLocaleDateString('ko-KR');
+                  return (
+                    <TouchableOpacity
+                      key={meeting.id}
+                      style={[styles.meetingItem, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}
+                      onPress={() => handleSelectMeeting(meeting)}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${meeting.title}, ${dateStr}, ${durationMin}분`}
+                      accessibilityHint="회의록 상세 화면으로 이동합니다"
+                    >
+                      <View
+                        style={[styles.meetingIcon, { backgroundColor: colors.backgroundSelected }]}
+                        accessibilityElementsHidden
+                        importantForAccessibility="no"
+                      >
+                        <Feather name="file-text" size={15} color={colors.primary} />
+                      </View>
+                      <View style={styles.meetingBody}>
+                        <ThemedText type="small" numberOfLines={1} style={styles.meetingTitle}>
+                          {meeting.title}
+                        </ThemedText>
+                        <View style={styles.meetingMeta}>
+                          <ThemedText type="small" themeColor="textSecondary" style={styles.metaText}>
+                            {dateStr}
+                          </ThemedText>
+                          <View style={[styles.metaDot, { backgroundColor: colors.border }]} />
+                          <ThemedText type="small" themeColor="textSecondary" style={styles.metaText}>
+                            {durationMin}분
+                          </ThemedText>
+                        </View>
+                      </View>
+                      <Feather name="chevron-right" size={16} color={colors.textSecondary} />
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             )}
           </View>
         </ScrollView>
       </SafeAreaView>
-    </ThemedView>
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  safe: { flex: 1 },
-  content: {
-    padding: Spacing.four,
-    paddingBottom: BottomTabInset + Spacing.four,
-    gap: Spacing.four,
-  },
-  header: {
-    gap: Spacing.one,
-  },
-  quickStartBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.two,
-    paddingVertical: Spacing.three,
-    borderRadius: Spacing.three,
-  },
-  quickStartText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  joinSection: {
-    gap: Spacing.two,
-  },
-  codeInputWrapper: {
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderRadius: Spacing.two,
-    overflow: 'hidden',
-  },
-  codeInput: {
-    flex: 1,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    fontSize: 16,
-  },
-  joinBtn: {
-    paddingHorizontal: Spacing.three,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  joinBtnText: {
-    color: '#ffffff',
-    fontWeight: '600',
-  },
-  recentSection: {
-    gap: Spacing.two,
-  },
-  recentHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  meetingsList: {
-    gap: Spacing.two,
-  },
-  emptyState: {
-    paddingVertical: Spacing.four,
-    alignItems: 'center',
-  },
-});
