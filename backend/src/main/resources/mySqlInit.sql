@@ -3,12 +3,12 @@
  *
  * [설계]
  *  회원(user)
- *    - 회원 ID [PK] / 이메일 / 회원명 / 언어(공통코드) / 글씨 크기(공통코드) / 진동설정(Y/N)
+ *    - 회원 ID [PK] / 이메일 / 회원명 / 언어(공통코드) / 글씨 크기(공통코드) / 진동설정(Y/N) / 그룹코드
  *  회의(meeting)
  *    - 회의 ID [PK] / 회의명 / 회의 날짜 / 회의 코드[unique] / 요약내용 / 회의 소요 시간 / 상태(진행중/종료)
  *  회의 참석(meeting_attendance)
  *    - 회의 참석 ID [PK] / 회의 ID [FK] / 회원 ID [FK] / 즐겨찾기 여부(Y/N)
- *      / 액션아이템 / 발화빈도수 / 번역 언어 / BM ID
+ *      / 액션아이템 / 발화빈도수 / 번역 언어 / BM ID / 개설여부(Y/N)
  * ========================================================================= */
 
 -- ----------------------------------------------------------------------------
@@ -17,9 +17,45 @@
 DROP TABLE IF EXISTS meeting_attendance;
 DROP TABLE IF EXISTS meeting;
 DROP TABLE IF EXISTS `user`;
+DROP TABLE IF EXISTS comm_dt;
+DROP TABLE IF EXISTS comm_mt;
 
 -- ----------------------------------------------------------------------------
--- 회원
+-- 1. 메인 공통 코드 (Comm_mt)
+-- ----------------------------------------------------------------------------
+CREATE TABLE comm_mt (
+    main_cd      VARCHAR(30)  NOT NULL                COMMENT '메인 코드',
+    main_cd_nm   VARCHAR(100) NOT NULL                COMMENT '메인 코드 명',
+    description  VARCHAR(500) NULL                    COMMENT '설명',
+    created_by   VARCHAR(100) NOT NULL DEFAULT 'SYSTEM' COMMENT '생성자명',
+    created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP                     COMMENT '생성일시',
+    updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시',
+    PRIMARY KEY (main_cd)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci
+  COMMENT = '메인 공통 코드';
+
+-- ----------------------------------------------------------------------------
+-- 2. 서브 공통 코드 (Comm_dt)
+-- ----------------------------------------------------------------------------
+CREATE TABLE comm_dt (
+    sub_cd       VARCHAR(30)  NOT NULL                COMMENT '서브 코드',
+    main_cd      VARCHAR(30)  NOT NULL                COMMENT '메인 코드 FK',
+    sub_cd_nm    VARCHAR(100) NOT NULL                COMMENT '서브 코드 명',
+    description  VARCHAR(500) NULL                    COMMENT '설명',
+    created_by   VARCHAR(100) NOT NULL DEFAULT 'SYSTEM' COMMENT '생성자명',
+    created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP                     COMMENT '생성일시',
+    updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시',
+    PRIMARY KEY (sub_cd, main_cd),
+    CONSTRAINT fk_comm_dt_main_cd FOREIGN KEY (main_cd) REFERENCES comm_mt (main_cd)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci
+  COMMENT = '서브 공통 코드';
+
+-- ----------------------------------------------------------------------------
+-- 3. 회원
 -- ----------------------------------------------------------------------------
 CREATE TABLE `user` (
     user_id      BIGINT       NOT NULL AUTO_INCREMENT COMMENT '회원 ID',
@@ -30,6 +66,7 @@ CREATE TABLE `user` (
     vibration_yn CHAR(1)      NOT NULL DEFAULT 'N'    COMMENT '진동설정 Y/N',
     created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP                     COMMENT '생성일시',
     updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시',
+    group_cd     VARCHAR(30)  NULL COMMENT '그룹코드',
     PRIMARY KEY (user_id),
     UNIQUE KEY uk_user_email (email),
     CONSTRAINT ck_user_vibration_yn CHECK (vibration_yn IN ('Y', 'N'))
@@ -39,7 +76,7 @@ CREATE TABLE `user` (
   COMMENT = '회원';
 
 -- ----------------------------------------------------------------------------
--- 회의
+-- 4. 회의
 -- ----------------------------------------------------------------------------
 CREATE TABLE meeting (
     meeting_id   BIGINT       NOT NULL AUTO_INCREMENT COMMENT '회의 ID',
@@ -60,7 +97,7 @@ CREATE TABLE meeting (
   COMMENT = '회의';
 
 -- ----------------------------------------------------------------------------
--- 회의 참석 (회의 N : M 회원)
+-- 5. 회의 참석 (회의 N : M 회원)
 -- ----------------------------------------------------------------------------
 CREATE TABLE meeting_attendance (
     attendance_id      BIGINT      NOT NULL AUTO_INCREMENT COMMENT '회의 참석 ID',
@@ -73,6 +110,7 @@ CREATE TABLE meeting_attendance (
     bm_id              BIGINT      NULL                    COMMENT 'BM ID',
     created_at         DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP                     COMMENT '생성일시',
     updated_at         DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '수정일시',
+    iscreated          CHAR(1)     NOT NULL DEFAULT 'N'    COMMENT '개설여부',
     PRIMARY KEY (attendance_id),
     UNIQUE KEY uk_attendance_meeting_user (meeting_id, user_id),
     KEY idx_attendance_user (user_id),
@@ -83,3 +121,19 @@ CREATE TABLE meeting_attendance (
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci
   COMMENT = '회의 참석';
+
+
+-- ============================================================================
+-- 초기 데이터 설정 (공통코드)
+-- ============================================================================
+
+-- 메인 공통코드 입력 (언어)
+INSERT INTO comm_mt (main_cd, main_cd_nm, description, created_by)
+VALUES ('C0001', '언어', '시스템 사용 및 번역 대상 언어 정의', 'SYSTEM');
+
+-- 서브 공통코드 입력 (한국어, 영어, 일본어, 중국어)
+INSERT INTO comm_dt (sub_cd, main_cd, sub_cd_nm, description, created_by) VALUES
+('KR',  'C0001', '한국어', 'korean',   'SYSTEM'),
+('ENG', 'C0001', '영어',   'english',  'SYSTEM'),
+('JP',  'C0001', '일본어', 'japanese', 'SYSTEM'),
+('CHI', 'C0001', '중국어', 'chinese',  'SYSTEM');
