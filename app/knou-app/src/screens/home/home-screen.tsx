@@ -10,7 +10,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useMeetingStore, useUiStore, useAuthStore } from '@/store';
 import type { MeetingRecord } from '@/types/meeting';
-import { useRecentMeetings } from './hooks';
+import { useJoinMeeting, useRecentMeetings } from './hooks';
 import { styles } from './home-screen.styles';
 
 // 2. 페이지(함수) 시작
@@ -30,6 +30,7 @@ export function HomeScreen() {
   const setShowCreateSheet = useUiStore((s) => s.setShowCreateSheet);
   // - TanStack Query: 최근 회의 목록 (서버 응답 매핑된 결과)
   const { data: recentMeetings = [], isLoading } = useRecentMeetings(3);
+  const joinMutation = useJoinMeeting();
 
   // 5. 함수들
   const handleStartMeeting = () => {
@@ -42,13 +43,18 @@ export function HomeScreen() {
 
   const handleJoinByCode = async () => {
     const code = joinCode.trim();
-    if (!code) return;
-    // TODO: API 호출 - 회의 코드로 참여
-    setJoinCode('');
-    router.push({
-      pathname: '/(tabs)/meeting',
-      params: { code },
-    });
+    if (!code || joinMutation.isPending) return;
+    try {
+      const room = await joinMutation.mutateAsync(code);
+      setJoinCode('');
+      router.push({
+        pathname: '/(tabs)/meeting',
+        params: { meetingId: String(room.meetingId), code: room.meetingCode },
+      });
+    } catch (e) {
+      // TODO: 사용자에게 에러 노출 (토스트/알럿)
+      console.warn('[home] join 실패', e);
+    }
   };
 
   const handleSelectMeeting = (meeting: MeetingRecord) => {
@@ -131,14 +137,16 @@ export function HomeScreen() {
               <TouchableOpacity
                 style={[styles.joinBtn, { backgroundColor: colors.accent }]}
                 onPress={handleJoinByCode}
-                disabled={!joinCode.trim()}
+                disabled={!joinCode.trim() || joinMutation.isPending}
                 activeOpacity={0.7}
                 accessibilityRole="button"
                 accessibilityLabel="회의 참여"
                 accessibilityHint="입력한 코드로 회의에 참여합니다"
-                accessibilityState={{ disabled: !joinCode.trim() }}
+                accessibilityState={{ disabled: !joinCode.trim() || joinMutation.isPending }}
               >
-                <ThemedText style={styles.joinBtnText}>참여</ThemedText>
+                <ThemedText style={styles.joinBtnText}>
+                  {joinMutation.isPending ? '참여 중…' : '참여'}
+                </ThemedText>
               </TouchableOpacity>
             </View>
           </View>
