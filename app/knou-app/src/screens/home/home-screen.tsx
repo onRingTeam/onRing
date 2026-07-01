@@ -41,9 +41,14 @@ export function HomeScreen() {
   };
 
   const handleJoinByCode = async () => {
-    if (!joinCode.trim()) return;
+    const code = joinCode.trim();
+    if (!code) return;
     // TODO: API 호출 - 회의 코드로 참여
     setJoinCode('');
+    router.push({
+      pathname: '/(tabs)/meeting',
+      params: { code },
+    });
   };
 
   const handleSelectMeeting = (meeting: MeetingRecord) => {
