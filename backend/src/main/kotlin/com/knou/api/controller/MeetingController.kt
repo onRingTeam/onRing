@@ -1,7 +1,6 @@
 package com.knou.api.controller
 
 import com.knou.api.dto.common.ExportFormat
-import com.knou.api.dto.common.MeetingStatus
 import com.knou.api.dto.common.PageResponse
 import com.knou.api.dto.meeting.CreateMeetingRequest
 import com.knou.api.dto.meeting.ExportRequest
@@ -10,6 +9,7 @@ import com.knou.api.dto.meeting.MeetingDetailResponse
 import com.knou.api.dto.meeting.MeetingListItemResponse
 import com.knou.api.dto.meeting.MeetingMessageResponse
 import com.knou.api.dto.meeting.MeetingRoomResponse
+import com.knou.api.service.MeetingService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -34,7 +34,9 @@ import org.springframework.web.bind.annotation.RestController
 @Tag(name = "Meeting", description = "회의 생성/참여/조회/내보내기")
 @RestController
 @RequestMapping("/api/meetings")
-class MeetingController {
+class MeetingController(
+    private val meetingService: MeetingService,
+) {
 
     @Operation(summary = "신규 회의 생성", description = "회의명·내 언어로 회의를 생성한다. 회의 코드는 '날짜+회의명 첫글자+UUID'로 자동 생성. (화면 2-b-i-1)")
     @PostMapping
@@ -42,16 +44,7 @@ class MeetingController {
         @RequestHeader("X-User-Id") userId: Long,
         @Valid @RequestBody request: CreateMeetingRequest,
     ): ResponseEntity<MeetingRoomResponse> {
-        // TODO: MeetingService.create(userId, request) — 진행중 회의 존재 시 409 confirm 처리
-        return ResponseEntity.ok(
-            MeetingRoomResponse(
-                meetingId = 1,
-                title = request.title,
-                meetingCode = "20260626X-stub",
-                status = MeetingStatus.IN_PROGRESS,
-                host = true,
-            ),
-        )
+        return ResponseEntity.ok(meetingService.create(userId, request))
     }
 
     @Operation(summary = "회의 참여", description = "회의 코드로 진행중 회의에 참여한다. 종료/존재하지 않는 코드는 에러. (화면 2-c-i)")
@@ -60,16 +53,7 @@ class MeetingController {
         @RequestHeader("X-User-Id") userId: Long,
         @Valid @RequestBody request: JoinMeetingRequest,
     ): ResponseEntity<MeetingRoomResponse> {
-        // TODO: MeetingService.join(userId, request.meetingCode)
-        return ResponseEntity.ok(
-            MeetingRoomResponse(
-                meetingId = 1,
-                title = "주간 정기회의",
-                meetingCode = request.meetingCode,
-                status = MeetingStatus.IN_PROGRESS,
-                host = false,
-            ),
-        )
+        return ResponseEntity.ok(meetingService.join(userId, request.meetingCode))
     }
 
     @Operation(

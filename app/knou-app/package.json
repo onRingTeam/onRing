@@ -5,6 +5,7 @@
   "dependencies": {
     "@expo/ui": "~56.0.18",
     "@expo/vector-icons": "^15.0.2",
+    "@stomp/stompjs": "^7.3.0",
     "@tanstack/react-query": "^5.101.2",
     "expo": "~56.0.12",
     "expo-constants": "~56.0.18",
@@ -37,8 +38,9 @@
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "emu": "bash ./scripts/run-emulator.sh",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint"
   },

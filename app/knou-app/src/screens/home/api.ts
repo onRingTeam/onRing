@@ -1,9 +1,28 @@
-import type { MeetingRecord } from '@/types/meeting';
+import type { MeetingRecord, MeetingRoomResponse } from '@/types/meeting';
+import { API_BASE, DEMO_USER_ID } from '@/lib/config';
 import {
   MOCK_RECENT_MEETINGS_RESPONSE,
   mapRecentMeeting,
   type RecentMeetingDto,
 } from './mock-data';
+
+/**
+ * 회의 코드로 참여. 성공 시 회의실 진입 정보(meetingId 포함)를 반환한다.
+ * POST /api/meetings/join
+ */
+export async function joinMeeting(meetingCode: string): Promise<MeetingRoomResponse> {
+  const res = await fetch(`${API_BASE}/api/meetings/join`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      // TODO Phase 6: JWT 도입 후 Authorization 헤더로 대체.
+      'X-User-Id': String(DEMO_USER_ID),
+    },
+    body: JSON.stringify({ meetingCode }),
+  });
+  if (!res.ok) throw new Error(`회의 참여 실패 (${res.status})`);
+  return res.json();
+}
 
 /**
  * 최근 회의 목록 조회.

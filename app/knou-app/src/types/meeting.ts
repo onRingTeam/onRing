@@ -31,6 +31,20 @@ export interface ChatMessageResponse {
   sentAt: string;
 }
 
+/**
+ * 참여자 presence 계약 (두 번째 토픽) — 백엔드 `ParticipantDto.kt`와 동일.
+ */
+
+/** 클라이언트 → 서버: 입장 (`/app/meetings/{id}/participants/join`). */
+export interface ParticipantJoinRequest {
+  senderName: string;
+}
+
+/** 서버 → 구독자: 현재 참여자 이름 목록 (`/topic/meetings/{id}/participants`). */
+export interface ParticipantListResponse {
+  participants: string[];
+}
+
 export interface Speaker {
   id: string;
   name: string;
@@ -45,6 +59,18 @@ export interface CaptionItem {
   /** 내 언어로 번역된 문장 (없으면 원문만 표시) */
   translation?: string;
   timestamp: number;
+}
+
+export type MeetingStatus = 'IN_PROGRESS' | 'ENDED';
+
+/** 회의 생성/참여 결과 (회의실 진입 정보) — 백엔드 `MeetingRoomResponse`와 일치. */
+export interface MeetingRoomResponse {
+  meetingId: number;
+  title: string;
+  meetingCode: string;
+  status: MeetingStatus;
+  /** 개설자 여부 (true면 종료 버튼 노출) */
+  host: boolean;
 }
 
 export interface MeetingRecord {
