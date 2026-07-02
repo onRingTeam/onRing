@@ -1,5 +1,23 @@
-import type { MeetingRecord, MeetingRoomResponse } from '@/types/meeting';
+import type { LangCode, MeetingRecord, MeetingRoomResponse } from '@/types/meeting';
+import { toBackendLang } from '@/types/meeting';
 import { API_BASE, DEMO_USER_ID } from '@/lib/config';
+
+/**
+ * 신규 회의 생성. 회의명·내 언어로 생성하고 회의실 진입 정보(meetingId 포함)를 반환.
+ * POST /api/meetings
+ */
+export async function createMeeting(title: string, language: LangCode): Promise<MeetingRoomResponse> {
+  const res = await fetch(`${API_BASE}/api/meetings`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-User-Id': String(DEMO_USER_ID),
+    },
+    body: JSON.stringify({ title, language: toBackendLang(language) }),
+  });
+  if (!res.ok) throw new Error(`회의 생성 실패 (${res.status})`);
+  return res.json();
+}
 import {
   MOCK_RECENT_MEETINGS_RESPONSE,
   mapRecentMeeting,
