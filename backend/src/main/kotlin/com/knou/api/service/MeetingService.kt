@@ -1,8 +1,13 @@
 package com.knou.api.service
 
+import com.knou.api.dto.common.Language
 import com.knou.api.dto.common.MeetingStatus
+import com.knou.api.dto.common.PageResponse
 import com.knou.api.dto.meeting.CreateMeetingRequest
+import com.knou.api.dto.meeting.MeetingDetailResponse
+import com.knou.api.dto.meeting.MeetingListItemResponse
 import com.knou.api.dto.meeting.MeetingRoomResponse
+import com.knou.api.dto.meeting.SpeakerStatResponse
 import com.knou.api.entity.MeetingAttendanceEntity
 import com.knou.api.entity.MeetingEntity
 import com.knou.api.repository.MeetingAttendanceRepository
@@ -12,10 +17,14 @@ import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
+import java.time.Duration
 import java.time.LocalDateTime
 
 /** 회의 코드 문자셋 — 혼동 쉬운 O,0,I,1,L 제외. */
 private const val CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+/** 홈 최근 회의 기본 노출 건수 (화면정의서 2-d). */
+private const val RECENT_LIMIT = 4
 
 /**
  * 회의 생성/참여/조회 비즈니스 로직.
@@ -29,7 +38,7 @@ class MeetingService(
 
     /**
      * 신규 회의 생성. 회의 코드('날짜+회의명 첫글자+UUID')를 자동 생성하고,
-     * 개설자를 참석자로 등록한 뒤 회의실 진입 정보를 반환한다.
+     * 개설자를 참석자(개설여부 Y)로 등록한 뒤 회의실 진입 정보를 반환한다.
      *
      * @throws ResponseStatusException 404(사용자 없음)
      */
@@ -48,12 +57,13 @@ class MeetingService(
             ),
         )
 
-        // 개설자를 참석자로 등록 (내 언어를 번역 언어로 저장)
+        // 개설자를 참석자로 등록 (내 언어를 번역 언어로 저장, 개설여부 Y)
         attendanceRepository.save(
             MeetingAttendanceEntity(
                 meeting = meeting,
                 user = user,
                 translateLanguage = request.language.name,
+                isCreated = "Y",
             ),
         )
 
@@ -98,24 +108,190 @@ class MeetingService(
             ?: throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "회의 ID가 없습니다.")
 
         // 참석 기록이 없으면 생성 (idempotent — 재참여 시 중복 저장 방지)
-        if (attendanceRepository.findByMeeting_MeetingIdAndUser_UserId(meetingId, userId) == null) {
-            attendanceRepository.save(
+        val attendance = attendanceRepository.findByMeeting_MeetingIdAndUser_UserId(meetingId, userId)
+            ?: attendanceRepository.save(
                 MeetingAttendanceEntity(
                     meeting = meeting,
                     user = user,
                     translateLanguage = user.language,
                 ),
             )
-        }
 
         return MeetingRoomResponse(
             meetingId = meetingId,
             title = meeting.title,
             meetingCode = meeting.meetingCode,
             status = MeetingStatus.valueOf(meeting.status),
-            // MeetingEntity 에 개설자 개념이 없어 참여자는 항상 host=false.
-            // TODO: 개설자(creator) 필드 도입 시 실제 판별.
-            host = false,
+            host = attendance.isCreated == "Y",
+        )
+    }
+
+    /**
+     * 현재 진행중인 내 회의 조회. 없으면 null(컨트롤러에서 204). (화면정의서 1-c)
+     */
+    @Transactional(readOnly = true)
+    fun activeMeeting(userId: Long): MeetingRoomResponse? {
+        val attendance = attendanceRepository
+            .findFirstByUser_UserIdAndMeeting_Status(userId, "IN_PROGRESS")
+            ?: return null
+        val meeting = attendance.meeting
+        return MeetingRoomResponse(
+            meetingId = meeting.meetingId!!,
+            title = meeting.title,
+            meetingCode = meeting.meetingCode,
+            status = MeetingStatus.valueOf(meeting.status),
+            host = attendance.isCreated == "Y",
+        )
+    }
+
+    /**
+     * 홈 화면 최근 회의 목록. 내 참석 이력을 회의 날짜 최신순으로 limit 건 반환. (화면정의서 2-d)
+     */
+    @Transactional(readOnly = true)
+    fun recent(userId: Long, limit: Int = RECENT_LIMIT): List<MeetingListItemResponse> {
+        return attendanceRepository
+            .findAllByUser_UserIdOrderByMeeting_MeetingDateDesc(userId)
+            .take(limit)
+            .map { toListItem(it) }
+    }
+
+    /**
+     * 회의록 목록/검색. 내 회의 대상 회의명·코드·요약 like 검색 + 즐겨찾기 필터 + 페이징. (화면정의서 3-b, 3-c, 3-d)
+     */
+    @Transactional(readOnly = true)
+    fun search(
+        userId: Long,
+        keyword: String?,
+        favoriteOnly: Boolean,
+        page: Int,
+        size: Int,
+    ): PageResponse<MeetingListItemResponse> {
+        val kw = keyword?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }
+
+        val filtered = attendanceRepository
+            .findAllByUser_UserIdOrderByMeeting_MeetingDateDesc(userId)
+            .asSequence()
+            .filter { !favoriteOnly || it.favoriteYn == "Y" }
+            .filter { att ->
+                kw == null || run {
+                    val m = att.meeting
+                    m.title.lowercase().contains(kw) ||
+                        m.meetingCode.lowercase().contains(kw) ||
+                        (m.summary?.lowercase()?.contains(kw) ?: false)
+                }
+            }
+            .toList()
+
+        val total = filtered.size.toLong()
+        val safeSize = if (size <= 0) 20 else size
+        val totalPages = if (total == 0L) 0 else ((total + safeSize - 1) / safeSize).toInt()
+        val content = filtered
+            .drop(page * safeSize)
+            .take(safeSize)
+            .map { toListItem(it) }
+
+        return PageResponse(
+            page = page,
+            size = safeSize,
+            totalElements = total,
+            totalPages = totalPages,
+            content = content,
+        )
+    }
+
+    /**
+     * 상세회의 - AI 요약. 회의 기본 정보 + 참석자 기반 화자별 통계를 반환한다. (화면정의서 4-b, 4-c)
+     * (AI 요약 내용·액션아이템은 추후 배치가 채움 — 없으면 null/0.)
+     *
+     * @throws ResponseStatusException 404(회의 없음)
+     */
+    @Transactional(readOnly = true)
+    fun detail(meetingId: Long): MeetingDetailResponse {
+        val meeting = meetingRepository.findById(meetingId).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "회의를 찾을 수 없습니다: $meetingId")
+        }
+        val attendances = attendanceRepository.findAllByMeeting_MeetingId(meetingId)
+
+        val totalSpeech = attendances.sumOf { it.speechCount }
+        val speakers = attendances.map { att ->
+            SpeakerStatResponse(
+                userId = att.user.userId!!,
+                name = att.user.name,
+                actionItem = att.actionItem,
+                speechCount = att.speechCount,
+                speechRatio = if (totalSpeech > 0) att.speechCount * 100.0 / totalSpeech else 0.0,
+            )
+        }
+        val languageCount = attendances.mapNotNull { it.translateLanguage }.distinct().size
+
+        return MeetingDetailResponse(
+            meetingId = meeting.meetingId!!,
+            title = meeting.title,
+            meetingDate = meeting.meetingDate,
+            participantCount = attendances.size,
+            languageCount = languageCount,
+            durationSec = meeting.durationSec,
+            summary = meeting.summary,
+            speakers = speakers,
+        )
+    }
+
+    /**
+     * 즐겨찾기 토글. 내 참석 레코드의 favoriteYn 을 Y/N 전환. (화면정의서 3-c, 3-d)
+     *
+     * @throws ResponseStatusException 404(참석 기록 없음)
+     */
+    @Transactional
+    fun toggleFavorite(userId: Long, meetingId: Long) {
+        val attendance = attendanceRepository.findByMeeting_MeetingIdAndUser_UserId(meetingId, userId)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "참석 기록을 찾을 수 없습니다.")
+        attendance.favoriteYn = if (attendance.favoriteYn == "Y") "N" else "Y"
+    }
+
+    /**
+     * 회의 종료. 개설자(개설여부 Y)만 종료할 수 있으며, 상태를 ENDED 로 바꾸고 소요 시간을 계산한다. (화면정의서 5-a-1)
+     *
+     * @throws ResponseStatusException 404(회의/참석 없음), 403(개설자 아님), 409(이미 종료)
+     */
+    @Transactional
+    fun end(userId: Long, meetingId: Long) {
+        val meeting = meetingRepository.findById(meetingId).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "회의를 찾을 수 없습니다: $meetingId")
+        }
+        val attendance = attendanceRepository.findByMeeting_MeetingIdAndUser_UserId(meetingId, userId)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "참석 기록을 찾을 수 없습니다.")
+
+        if (attendance.isCreated != "Y") {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "회의 개설자만 종료할 수 있습니다.")
+        }
+        if (meeting.status == "ENDED") {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "이미 종료된 회의입니다.")
+        }
+
+        meeting.status = "ENDED"
+        meeting.durationSec = Duration.between(meeting.meetingDate, LocalDateTime.now()).seconds.toInt()
+    }
+
+    /** MeetingAttendance(내 참석 레코드) → 목록 카드 DTO 매핑. 참여자명·사용 언어는 회의 전체 참석자에서 집계. */
+    private fun toListItem(myAttendance: MeetingAttendanceEntity): MeetingListItemResponse {
+        val meeting = myAttendance.meeting
+        val meetingId = meeting.meetingId!!
+        val all = attendanceRepository.findAllByMeeting_MeetingId(meetingId)
+        val languages = all
+            .mapNotNull { it.translateLanguage }
+            .distinct()
+            .mapNotNull { runCatching { Language.valueOf(it) }.getOrNull() }
+
+        return MeetingListItemResponse(
+            meetingId = meetingId,
+            title = meeting.title,
+            favorite = myAttendance.favoriteYn == "Y",
+            meetingDate = meeting.meetingDate,
+            durationSec = meeting.durationSec,
+            participantNames = all.map { it.user.name },
+            languages = languages,
+            summary = meeting.summary,
+            status = MeetingStatus.valueOf(meeting.status),
         )
     }
 }
