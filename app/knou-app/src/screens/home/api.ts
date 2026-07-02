@@ -12,7 +12,7 @@ export async function createMeeting(title: string, language: LangCode): Promise<
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-User-Id': String(DEMO_USER_ID),
+      ...authHeaders(),
     },
     body: JSON.stringify({ title, language: toBackendLang(language) }),
   });

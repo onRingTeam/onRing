@@ -43,7 +43,7 @@ export function HomeScreen() {
   };
 
   const handleJoinByCode = async () => {
-    const code = joinCode.trim();
+    const code = joinCode.trim().toUpperCase();
     if (!code || joinMutation.isPending) return;
     try {
       const room = await joinMutation.mutateAsync(code);
@@ -132,6 +132,7 @@ export function HomeScreen() {
                 onChangeText={setJoinCode}
                 maxLength={6}
                 autoCapitalize="characters"
+                autoCorrect={false}
                 accessibilityLabel="회의 코드 입력"
                 accessibilityHint="참여할 회의의 코드를 입력하세요"
               />
