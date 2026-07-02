@@ -1,13 +1,21 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import type { LangCode } from '@/types/meeting';
-import { createMeeting, fetchRecentMeetings, joinMeeting } from './api';
+import { createMeeting, fetchActiveMeeting, fetchRecentMeetings, joinMeeting } from './api';
 
-/** 최근 회의 목록 조회 쿼리 */
-export function useRecentMeetings(limit = 3) {
+/** 최근 회의 목록 조회 쿼리 (홈 노출용). */
+export function useRecentMeetings() {
   return useQuery({
-    queryKey: ['recent-meetings', limit],
-    queryFn: () => fetchRecentMeetings(limit),
+    queryKey: ['recent-meetings'],
+    queryFn: fetchRecentMeetings,
+  });
+}
+
+/** 현재 진행중인 내 회의 조회 (없으면 null). */
+export function useActiveMeeting() {
+  return useQuery({
+    queryKey: ['active-meeting'],
+    queryFn: fetchActiveMeeting,
   });
 }
 
