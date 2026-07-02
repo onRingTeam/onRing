@@ -1,70 +1,56 @@
-import { StyleSheet, TouchableOpacity, View } from 'react-native';
+// 1. Import
+import { ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
 
-import { ScreenPlaceholder } from '@/components/ui/screen-placeholder';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useAuthStore } from '@/store';
-import { signOut } from '@/lib/auth';
+import { useProfile } from './hooks';
+import { ProfileCard } from './components/profile-card';
+import { ChatSettingsCard } from './components/chat-settings-card';
+import { AppSettingsCard } from './components/app-settings-card';
+import { AppInfoCard } from './components/app-info-card';
+import { ProfileEditSheet } from './components/profile-edit-sheet';
+import { styles } from './settings-screen.styles';
 
+// 2. 페이지(함수) 시작
 export function SettingsScreen() {
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
-  const user = useAuthStore((s) => s.user);
 
-  const handleLogout = async () => {
-    try {
-      await signOut();
-      // signOut 이 스토어를 비우면 루트 게이트가 /login 으로 보낸다.
-    } catch (e) {
-      console.warn('[settings] 로그아웃 실패', e);
-    }
-  };
+  // 3. 서버 상태 — 내 프로필 + 채팅 설정
+  const { data: profile, isLoading, isError } = useProfile();
 
+  // 4. Return
   return (
-    <ThemedView style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
       <SafeAreaView edges={['top']} style={styles.safe}>
-        <ScreenPlaceholder
-          title="설정"
-          description="프로필, 자막 언어, 알림 등 앱 환경을 설정하는 화면입니다."
-        />
-
-        <View style={styles.footer}>
-          {user ? (
-            <ThemedText style={[styles.account, { color: colors.textSecondary }]}>
-              {user.email}
-            </ThemedText>
-          ) : null}
-          <TouchableOpacity
-            style={[styles.logoutBtn, { borderColor: colors.border }]}
-            onPress={handleLogout}
-            activeOpacity={0.8}
-          >
-            <Feather name="log-out" size={18} color={colors.error} />
-            <ThemedText style={[styles.logoutText, { color: colors.error }]}>로그아웃</ThemedText>
-          </TouchableOpacity>
+        <View style={styles.header}>
+          <ThemedText type="subtitle" style={styles.title}>
+            설정
+          </ThemedText>
         </View>
+
+        {isLoading ? (
+          <ThemedText type="small" themeColor="textSecondary" style={styles.stateText}>
+            로드 중...
+          </ThemedText>
+        ) : isError || !profile ? (
+          <ThemedText type="small" themeColor="textSecondary" style={styles.stateText}>
+            프로필을 불러오지 못했습니다.
+          </ThemedText>
+        ) : (
+          <>
+            <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+              <ProfileCard profile={profile} />
+              <ChatSettingsCard profile={profile} />
+              <AppSettingsCard />
+              <AppInfoCard />
+            </ScrollView>
+            <ProfileEditSheet profile={profile} />
+          </>
+        )}
       </SafeAreaView>
-    </ThemedView>
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  safe: { flex: 1 },
-  footer: { paddingHorizontal: 24, paddingBottom: 32, gap: 12 },
-  account: { fontSize: 13, textAlign: 'center' },
-  logoutBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    height: 48,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  logoutText: { fontSize: 15, fontWeight: '600' },
-});
