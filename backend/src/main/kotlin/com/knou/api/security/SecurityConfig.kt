@@ -36,7 +36,8 @@ class SecurityConfig {
             .httpBasic { it.disable() }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authorizeHttpRequests {
-                it.requestMatchers("/health").permitAll()
+                // 헬스체크 + 로그인(토큰 발급 창구)은 공개.
+                it.requestMatchers("/health", "/auth/login").permitAll()
                     .anyRequest().authenticated()
             }
             // 미인증 접근 시 401/302 대신 403 으로 차단
