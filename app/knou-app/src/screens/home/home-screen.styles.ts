@@ -17,6 +17,13 @@ export const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '700',
   },
   greetingLabel: {
     fontSize: 11,

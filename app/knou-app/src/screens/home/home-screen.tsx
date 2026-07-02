@@ -1,6 +1,6 @@
 // 1. Import
 import { useState } from 'react';
-import { ScrollView, View, TouchableOpacity, TextInput, Image, Modal } from 'react-native';
+import { ScrollView, View, TouchableOpacity, TextInput, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -14,8 +14,6 @@ import { formatDuration, formatMeetingDate } from '@/utils/meeting-format';
 import { useActiveMeeting, useJoinMeeting, useRecentMeetings } from './hooks';
 import { CreateMeetingSheet } from './components/create-meeting-sheet';
 import { styles } from './home-screen.styles';
-
-const LOGO = require('../../../assets/images/brand/onring-mark.png');
 
 // 2. 페이지(함수) 시작
 export function HomeScreen() {
@@ -95,13 +93,13 @@ export function HomeScreen() {
           accessibilityRole="header"
           accessibilityLabel={`${greeting} ${user?.name ?? '사용자'} 님`}
         >
-          <Image
-            source={LOGO}
-            style={styles.avatar}
-            resizeMode="contain"
+          <View
+            style={[styles.avatar, { backgroundColor: colors.primary }]}
             accessibilityElementsHidden
             importantForAccessibility="no"
-          />
+          >
+            <ThemedText style={styles.avatarText}>OR</ThemedText>
+          </View>
           <View>
             <ThemedText type="small" themeColor="textSecondary" style={styles.greetingLabel}>
               {greeting}
