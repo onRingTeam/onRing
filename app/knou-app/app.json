@@ -35,7 +35,8 @@
             "imageWidth": 76
           }
         }
-      ]
+      ],
+      "@config-plugins/react-native-webrtc"
     ],
     "experiments": {
       "typedRoutes": true,

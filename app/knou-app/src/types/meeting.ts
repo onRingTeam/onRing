@@ -45,6 +45,23 @@ export interface ParticipantListResponse {
   participants: string[];
 }
 
+/**
+ * WebRTC Mesh 시그널링 계약 (세 번째 토픽) — 백엔드 `SignalDto.kt`와 일치.
+ * 서버는 단순 릴레이, P2P 협상은 클라이언트가 담당.
+ * 발행 `/app/meetings/{id}/signal` · 구독 `/topic/meetings/{id}/signal`.
+ */
+export type SignalType = 'join' | 'offer' | 'answer' | 'candidate' | 'leave';
+
+export interface SignalMessage {
+  type: SignalType;
+  /** 발신 peerId */
+  from: string;
+  /** 수신 peerId (null = 방 전체) */
+  to?: string | null;
+  /** SDP/ICE 등 직렬화(JSON string)된 페이로드 */
+  payload?: string | null;
+}
+
 export interface Speaker {
   id: string;
   name: string;

@@ -13,8 +13,9 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
 import java.time.LocalDateTime
-import java.time.format.DateTimeFormatter
-import java.util.UUID
+
+/** 회의 코드 문자셋 — 혼동 쉬운 O,0,I,1,L 제외. */
+private const val CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
 
 /**
  * 회의 생성/참여/조회 비즈니스 로직.
@@ -42,7 +43,7 @@ class MeetingService(
             MeetingEntity(
                 title = request.title,
                 meetingDate = LocalDateTime.now(),
-                meetingCode = generateMeetingCode(request.title),
+                meetingCode = generateMeetingCode(),
                 status = "IN_PROGRESS",
             ),
         )
@@ -65,13 +66,10 @@ class MeetingService(
         )
     }
 
-    /** 회의 코드 생성: yyyyMMdd + 회의명 첫 글자(대문자) + '-' + UUID 6자리. 충돌 시 재시도. */
-    private fun generateMeetingCode(title: String): String {
-        val datePart = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"))
-        val initial = title.trim().firstOrNull()?.uppercaseChar() ?: 'X'
-        repeat(5) {
-            val suffix = UUID.randomUUID().toString().replace("-", "").take(6)
-            val code = "$datePart$initial-$suffix"
+    /** 회의 코드 생성: 혼동 문자(O,0,I,1,L) 제외한 6자리 대문자·숫자. 충돌 시 재시도. */
+    private fun generateMeetingCode(): String {
+        repeat(10) {
+            val code = (1..6).map { CODE_ALPHABET.random() }.joinToString("")
             if (!meetingRepository.existsByMeetingCode(code)) return code
         }
         throw ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "회의 코드 생성에 실패했습니다.")

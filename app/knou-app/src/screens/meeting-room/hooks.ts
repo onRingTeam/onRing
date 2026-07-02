@@ -1,10 +1,19 @@
 import { useCallback, useEffect, useRef } from 'react';
+import { PermissionsAndroid, Platform } from 'react-native';
 
 import type { CaptionItem, ChatMessageRequest, ChatMessageResponse } from '@/types/meeting';
 import { fromBackendLang } from '@/types/meeting';
 import { useElapsed } from '@/hooks/use-elapsed';
 import { useMeetingStore } from '@/store';
 import { MeetingSocket } from '@/lib/websocket';
+import { MeshVoiceCall } from '@/lib/webrtc/mesh-voice-call';
+
+/** Android 마이크 권한 요청 (iOS는 네이티브 권한 팝업 자동). */
+async function ensureMicPermission(): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+  const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+  return result === PermissionsAndroid.RESULTS.GRANTED;
+}
 
 /** 서버 채팅 메시지(STOMP) → 화면 자막(CaptionItem) 매핑 */
 function toCaption(msg: ChatMessageResponse): CaptionItem {
@@ -29,21 +38,41 @@ export function useMeetingConnection(meetingId: number | null, senderName: strin
   const addCaption = useMeetingStore((s) => s.addCaption);
   const setParticipants = useMeetingStore((s) => s.setParticipants);
   const socketRef = useRef<MeetingSocket | null>(null);
+  const meshRef = useRef<MeshVoiceCall | null>(null);
+  // 세션 고유 peerId (Mesh 시그널링 식별자)
+  const peerIdRef = useRef<string>(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
 
   useEffect(() => {
     if (meetingId === null) return;
 
     const socket = new MeetingSocket();
+    const mesh = new MeshVoiceCall({
+      peerId: peerIdRef.current,
+      sendSignal: (msg) => socket.sendSignal(msg),
+    });
+
     socket.connect(meetingId, {
       joinName: senderName,
       onMessage: (msg) => addCaption(toCaption(msg)),
       onParticipants: (list) => setParticipants(list),
+      onSignal: (msg) => void mesh.handleSignal(msg),
+      onConnect: async () => {
+        // 회의 입장 시 음성통화(WebRTC) 자동 시작. 마이크 권한 필요.
+        if (await ensureMicPermission()) {
+          await mesh.start().catch((e) => console.warn('[voice] start 실패', e));
+        } else {
+          console.warn('[voice] 마이크 권한 거부됨');
+        }
+      },
     });
     socketRef.current = socket;
+    meshRef.current = mesh;
 
     return () => {
+      mesh.stop();
       socket.disconnect();
       socketRef.current = null;
+      meshRef.current = null;
     };
   }, [meetingId, senderName, addCaption, setParticipants]);
 
@@ -51,7 +80,12 @@ export function useMeetingConnection(meetingId: number | null, senderName: strin
     socketRef.current?.send(payload);
   }, []);
 
-  return { send };
+  /** 마이크 on/off (WebRTC 송신 트랙 토글) */
+  const setMicEnabled = useCallback((enabled: boolean) => {
+    meshRef.current?.setMicEnabled(enabled);
+  }, []);
+
+  return { send, setMicEnabled };
 }
 
 export function useMeetingSession() {

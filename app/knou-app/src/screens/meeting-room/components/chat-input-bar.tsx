@@ -6,19 +6,26 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-// 파형 시각화용 고정 높이 (목업 느낌)
-const WAVE_BARS = [6, 10, 4, 14, 8, 16, 6, 11, 5, 13, 7, 9];
-
 export interface ChatInputBarProps {
   /** 입력한 문장을 서버로 발행 */
   onSend?: (text: string) => void;
+  /** 마이크 on/off (WebRTC 송신 트랙 토글) */
+  onMicToggle?: (enabled: boolean) => void;
 }
 
-export function ChatInputBar({ onSend }: ChatInputBarProps) {
+export function ChatInputBar({ onSend, onMicToggle }: ChatInputBarProps) {
   const colors = useTheme();
   const [micOn, setMicOn] = useState(true);
   const [voiceOn, setVoiceOn] = useState(true);
   const [text, setText] = useState('');
+
+  const toggleMic = () => {
+    setMicOn((prev) => {
+      const next = !prev;
+      onMicToggle?.(next);
+      return next;
+    });
+  };
 
   const handleSend = () => {
     const trimmed = text.trim();
@@ -32,7 +39,7 @@ export function ChatInputBar({ onSend }: ChatInputBarProps) {
       {/* 마이크 / 음성 토글 */}
       <View style={styles.toggleRow}>
         <TouchableOpacity
-          onPress={() => setMicOn((v) => !v)}
+          onPress={toggleMic}
           activeOpacity={0.8}
           style={[
             styles.toggle,
@@ -65,20 +72,6 @@ export function ChatInputBar({ onSend }: ChatInputBarProps) {
           </ThemedText>
         </TouchableOpacity>
       </View>
-
-      {/* 음성 인식 파형 */}
-      {micOn && (
-        <View style={[styles.waveRow, { backgroundColor: colors.backgroundSelected }]}>
-          <View style={styles.wave}>
-            {WAVE_BARS.map((h, i) => (
-              <View key={i} style={[styles.waveBar, { height: h, backgroundColor: colors.accent }]} />
-            ))}
-          </View>
-          <ThemedText type="small" themeColor="textSecondary">
-            음성 인식 중...
-          </ThemedText>
-        </View>
-      )}
 
       {/* TTS 입력 */}
       <View style={[styles.inputRow, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
@@ -128,24 +121,6 @@ const styles = StyleSheet.create({
   toggleText: {
     fontSize: 15,
     fontWeight: '700',
-  },
-  waveRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.two,
-  },
-  wave: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    height: 18,
-  },
-  waveBar: {
-    width: 3,
-    borderRadius: 2,
   },
   inputRow: {
     flexDirection: 'row',

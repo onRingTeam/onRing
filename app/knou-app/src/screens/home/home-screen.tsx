@@ -11,6 +11,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useMeetingStore, useUiStore, useAuthStore } from '@/store';
 import type { MeetingRecord } from '@/types/meeting';
 import { useJoinMeeting, useRecentMeetings } from './hooks';
+import { CreateMeetingSheet } from './components/create-meeting-sheet';
 import { styles } from './home-screen.styles';
 
 // 2. 페이지(함수) 시작
@@ -42,7 +43,7 @@ export function HomeScreen() {
   };
 
   const handleJoinByCode = async () => {
-    const code = joinCode.trim();
+    const code = joinCode.trim().toUpperCase();
     if (!code || joinMutation.isPending) return;
     try {
       const room = await joinMutation.mutateAsync(code);
@@ -131,6 +132,7 @@ export function HomeScreen() {
                 onChangeText={setJoinCode}
                 maxLength={6}
                 autoCapitalize="characters"
+                autoCorrect={false}
                 accessibilityLabel="회의 코드 입력"
                 accessibilityHint="참여할 회의의 코드를 입력하세요"
               />
@@ -229,6 +231,9 @@ export function HomeScreen() {
           </View>
         </ScrollView>
       </SafeAreaView>
+
+      {/* 새 회의 생성 바텀시트 (「회의 시작」 → showCreateSheet) */}
+      <CreateMeetingSheet />
     </View>
   );
 }
