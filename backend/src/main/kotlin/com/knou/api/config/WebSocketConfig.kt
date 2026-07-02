@@ -2,9 +2,11 @@ package com.knou.api.config
 
 import com.knou.api.security.StompAuthChannelInterceptor
 import com.knou.api.utils.ActiveProfileProvider
+import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.messaging.simp.config.ChannelRegistration
 import org.springframework.messaging.simp.config.MessageBrokerRegistry
+import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer
@@ -36,9 +38,19 @@ class WebSocketConfig(
     }
 
     override fun configureMessageBroker(registry: MessageBrokerRegistry) {
+        // heartbeat 10초: Cloudflare 등 프록시가 유휴(~100초) WebSocket 을 강제 종료하는 것 방지
         registry.enableSimpleBroker("/topic", "/queue")
+            .setHeartbeatValue(longArrayOf(10_000, 10_000))
+            .setTaskScheduler(wsHeartbeatScheduler())
         registry.setApplicationDestinationPrefixes("/app")
         registry.setUserDestinationPrefix("/user")
+    }
+
+    /** SimpleBroker heartbeat 전송용 스케줄러 (heartbeat 활성화 시 필수). */
+    @Bean
+    fun wsHeartbeatScheduler(): ThreadPoolTaskScheduler = ThreadPoolTaskScheduler().apply {
+        poolSize = 1
+        setThreadNamePrefix("ws-heartbeat-")
     }
 
     /** 클라이언트 → 서버 인바운드 채널에 JWT 검증 인터셉터 등록 (CONNECT 시점 인증). */

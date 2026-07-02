@@ -46,6 +46,12 @@ export function MeetingScreen() {
     router.back();
   };
 
+  // presence가 오기 전에도 본인은 항상 보이도록 (서버 목록에 내 이름 있으면 중복 제거)
+  const myName = user?.name ?? '나';
+  const displayParticipants = participants.includes(myName)
+    ? participants
+    : [myName, ...participants];
+
   // 진행 중인 회의 없이 「회의」 탭으로 직접 진입 → 안내(가짜 빈 회의 방지)
   if (meetingId === null && !inMeeting) {
     return <NoMeetingState />;
@@ -57,7 +63,7 @@ export function MeetingScreen() {
         title="회의 진행"
         code={code}
         elapsed={elapsed}
-        participants={participants}
+        participants={displayParticipants}
         onEnd={handleEnd}
       />
 

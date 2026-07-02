@@ -85,8 +85,12 @@ export class MeetingSocket {
         console.warn('[MeetingSocket] STOMP error', frame.headers['message'], frame.body);
       },
       onWebSocketError: (e) => {
-        console.warn('[MeetingSocket] WebSocket error', e);
+        console.warn('[MeetingSocket] WebSocket error', (e as { message?: string })?.message ?? e);
       },
+      onWebSocketClose: (e) => {
+        console.warn('[MeetingSocket] WebSocket closed', e?.code, e?.reason);
+      },
+      debug: __DEV__ ? (m) => console.log('[MeetingSocket:debug]', m) : undefined,
     });
 
     client.activate();
