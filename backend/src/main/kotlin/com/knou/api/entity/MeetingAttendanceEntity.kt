@@ -45,6 +45,9 @@ class MeetingAttendanceEntity(
 
     @Column(name = "bm_id")
     var bmId: Long? = null,
+
+    @Column(name = "iscreated", nullable = false, length = 1)
+    var isCreated: String = "N",
 ) {
 
     @Id
