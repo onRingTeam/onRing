@@ -71,9 +71,9 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 48 },
   hero: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
-  symbol: { width: '90%', maxWidth: 320, aspectRatio: 1, marginBottom: 8 },
+  symbol: { width: '90%', maxWidth: 300, aspectRatio: 1, marginBottom: -130 },
   brand: { fontSize: 40, fontWeight: '800' },
-  tagline: { fontSize: 15 },
+  tagline: { fontSize: 17 },
   actions: { gap: 16 },
   googleBtn: {
     flexDirection: 'row',
