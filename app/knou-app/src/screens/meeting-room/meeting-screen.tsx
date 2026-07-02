@@ -15,7 +15,7 @@ import { MeetingHeader } from './components/meeting-header';
 import { LanguageBar } from './components/language-bar';
 import { CaptionStream } from './components/caption-stream';
 import { ChatInputBar } from './components/chat-input-bar';
-import { useMeetingConnection, useMeetingSession } from './hooks';
+import { useEndMeeting, useMeetingConnection, useMeetingSession } from './hooks';
 
 export function MeetingScreen() {
   const router = useRouter();
@@ -23,6 +23,7 @@ export function MeetingScreen() {
   const { code, meetingId: meetingIdParam } = useLocalSearchParams<{ code?: string; meetingId?: string }>();
   const meetingId = meetingIdParam ? Number(meetingIdParam) : null;
   const { inMeeting, captions, elapsed, endMeeting } = useMeetingSession();
+  const endMutation = useEndMeeting();
   const startMeeting = useMeetingStore((s) => s.startMeeting);
   const participants = useMeetingStore((s) => s.participants);
   const user = useAuthStore((s) => s.user);
@@ -41,7 +42,15 @@ export function MeetingScreen() {
     send({ senderName: user?.name ?? '나', message: text, lang: toBackendLang(myLang) });
   };
 
-  const handleEnd = () => {
+  const handleEnd = async () => {
+    // 서버에 회의 종료 요청 (개설자만 성공, 그 외 403은 무시하고 로컬 정리).
+    if (meetingId !== null) {
+      try {
+        await endMutation.mutateAsync(meetingId);
+      } catch (e) {
+        console.warn('[meeting] 종료 실패(개설자 아님이거나 이미 종료)', e);
+      }
+    }
     endMeeting(captions);
     router.back();
   };

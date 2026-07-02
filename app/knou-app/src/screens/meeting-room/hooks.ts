@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { PermissionsAndroid, Platform } from 'react-native';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import type { CaptionItem, ChatMessageRequest, ChatMessageResponse } from '@/types/meeting';
 import { fromBackendLang } from '@/types/meeting';
@@ -7,6 +8,7 @@ import { useElapsed } from '@/hooks/use-elapsed';
 import { useMeetingStore } from '@/store';
 import { MeetingSocket } from '@/lib/websocket';
 import { MeshVoiceCall } from '@/lib/webrtc/mesh-voice-call';
+import { endMeeting as endMeetingApi } from './api';
 
 /** Android 마이크 권한 요청 (iOS는 네이티브 권한 팝업 자동). */
 async function ensureMicPermission(): Promise<boolean> {
@@ -86,6 +88,22 @@ export function useMeetingConnection(meetingId: number | null, senderName: strin
   }, []);
 
   return { send, setMicEnabled };
+}
+
+/**
+ * 회의 종료 뮤테이션. 성공 시 홈의 진행중/최근 회의 캐시를 무효화해
+ * "진행 중 회의" confirm 이 더 이상 뜨지 않도록 한다. (화면정의서 5-a-1)
+ */
+export function useEndMeeting() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (meetingId: number) => endMeetingApi(meetingId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['active-meeting'] });
+      qc.invalidateQueries({ queryKey: ['recent-meetings'] });
+      qc.invalidateQueries({ queryKey: ['meetings'] });
+    },
+  });
 }
 
 export function useMeetingSession() {
