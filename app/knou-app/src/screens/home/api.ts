@@ -1,5 +1,6 @@
 import type { MeetingRecord, MeetingRoomResponse } from '@/types/meeting';
-import { API_BASE, DEMO_USER_ID } from '@/lib/config';
+import { API_BASE } from '@/lib/config';
+import { authHeaders } from '@/lib/api-headers';
 import {
   MOCK_RECENT_MEETINGS_RESPONSE,
   mapRecentMeeting,
@@ -15,8 +16,7 @@ export async function joinMeeting(meetingCode: string): Promise<MeetingRoomRespo
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      // TODO Phase 6: JWT 도입 후 Authorization 헤더로 대체.
-      'X-User-Id': String(DEMO_USER_ID),
+      ...authHeaders(),
     },
     body: JSON.stringify({ meetingCode }),
   });
