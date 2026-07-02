@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -29,10 +29,15 @@ export function MeetingScreen() {
   const user = useAuthStore((s) => s.user);
 
   const [myLang, setMyLang] = useState<LangCode>('en');
+  // 종료 후 store가 비워지면 아래 자동시작 effect가 재실행돼 회의가 되살아나는 것을 막는 가드.
+  const startedRef = useRef(false);
 
-  // 실제 회의(meetingId 있음)로 들어온 경우에만 세션 시작. (회의 탭 직접 진입 = 가짜 회의 방지)
+  // 실제 회의(meetingId 있음)로 들어온 경우에만 세션 시작 (mount당 1회). 회의 탭 직접 진입 = 가짜 회의 방지.
   useEffect(() => {
-    if (meetingId !== null && !inMeeting) startMeeting(code ?? '');
+    if (meetingId !== null && !inMeeting && !startedRef.current) {
+      startedRef.current = true;
+      startMeeting(code ?? '');
+    }
   }, [meetingId, inMeeting, code, startMeeting]);
 
   // 회의 화면이 켜져 있는 동안만 STOMP 연결 (채팅 + presence + WebRTC 시그널링) & 음성통화
@@ -52,7 +57,8 @@ export function MeetingScreen() {
       }
     }
     endMeeting(captions);
-    router.back();
+    // 종료 후엔 회의화면을 벗어나 홈으로 (탭 화면이라 back()으론 안 벗어나짐).
+    router.replace('/(tabs)');
   };
 
   // 진행 중인 회의 없이 「회의」 탭으로 직접 진입 → 안내(가짜 빈 회의 방지)
