@@ -8,10 +8,10 @@ import { Feather } from '@expo/vector-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useUiStore, useAuthStore } from '@/store';
+import { useUiStore, useAuthStore, useMeetingStore } from '@/store';
 import type { MeetingListItem } from '@/types/meeting';
 import { formatDuration, formatMeetingDate } from '@/utils/meeting-format';
-import { useActiveMeeting, useJoinMeeting, useRecentMeetings } from './hooks';
+import { useJoinMeeting, useRecentMeetings } from './hooks';
 import { CreateMeetingSheet } from './components/create-meeting-sheet';
 import { styles } from './home-screen.styles';
 
@@ -27,18 +27,20 @@ export function HomeScreen() {
   const [showActiveConfirm, setShowActiveConfirm] = useState(false);
 
   // 4. 전역 상태 & 비동기 서비스
-  // - Zustand: 로그인 사용자, UI 모달 제어
+  // - Zustand: 로그인 사용자, UI 모달 제어, 진행중 회의 여부(하단 회의 탭과 동일 기준)
   const user = useAuthStore((s) => s.user);
   const setShowCreateSheet = useUiStore((s) => s.setShowCreateSheet);
-  // - TanStack Query: 최근 회의 목록 / 진행중 회의(홈 진행중 confirm 판단)
+  const inMeeting = useMeetingStore((s) => s.inMeeting);
+  const currentMeetingCode = useMeetingStore((s) => s.currentMeetingId);
+  // - TanStack Query: 최근 회의 목록
   const { data: recentMeetings = [], isLoading } = useRecentMeetings();
-  const { data: activeMeeting } = useActiveMeeting();
   const joinMutation = useJoinMeeting();
 
   // 5. 함수들
   const handleStartMeeting = () => {
     // 진행 중인 회의가 있으면 새 회의 생성 불가 → 회의실 이동 confirm (화면정의서 2-b-i-1)
-    if (activeMeeting) {
+    // 판단 기준은 하단 '회의' 탭과 동일한 클라이언트 세션 플래그(inMeeting).
+    if (inMeeting) {
       setShowActiveConfirm(true);
       return;
     }
@@ -47,10 +49,9 @@ export function HomeScreen() {
 
   const goToActiveMeeting = () => {
     setShowActiveConfirm(false);
-    if (!activeMeeting) return;
     router.push({
       pathname: '/(tabs)/meeting',
-      params: { meetingId: String(activeMeeting.meetingId), code: activeMeeting.meetingCode },
+      params: currentMeetingCode ? { code: currentMeetingCode } : {},
     });
   };
 
@@ -120,7 +121,7 @@ export function HomeScreen() {
             accessibilityRole="button"
             accessibilityLabel="새 회의 만들기"
             accessibilityHint={
-              activeMeeting ? '진행 중인 회의실로 이동합니다' : '새 회의 생성 화면을 엽니다'
+              inMeeting ? '진행 중인 회의실로 이동합니다' : '새 회의 생성 화면을 엽니다'
             }
           >
             <ThemedText style={styles.heroEyebrow}>지금 바로 시작</ThemedText>
