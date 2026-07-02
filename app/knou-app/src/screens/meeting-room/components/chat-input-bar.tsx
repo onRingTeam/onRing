@@ -12,13 +12,23 @@ const WAVE_BARS = [6, 10, 4, 14, 8, 16, 6, 11, 5, 13, 7, 9];
 export interface ChatInputBarProps {
   /** 입력한 문장을 서버로 발행 */
   onSend?: (text: string) => void;
+  /** 마이크 on/off (WebRTC 송신 트랙 토글) */
+  onMicToggle?: (enabled: boolean) => void;
 }
 
-export function ChatInputBar({ onSend }: ChatInputBarProps) {
+export function ChatInputBar({ onSend, onMicToggle }: ChatInputBarProps) {
   const colors = useTheme();
   const [micOn, setMicOn] = useState(true);
   const [voiceOn, setVoiceOn] = useState(true);
   const [text, setText] = useState('');
+
+  const toggleMic = () => {
+    setMicOn((prev) => {
+      const next = !prev;
+      onMicToggle?.(next);
+      return next;
+    });
+  };
 
   const handleSend = () => {
     const trimmed = text.trim();
@@ -32,7 +42,7 @@ export function ChatInputBar({ onSend }: ChatInputBarProps) {
       {/* 마이크 / 음성 토글 */}
       <View style={styles.toggleRow}>
         <TouchableOpacity
-          onPress={() => setMicOn((v) => !v)}
+          onPress={toggleMic}
           activeOpacity={0.8}
           style={[
             styles.toggle,
