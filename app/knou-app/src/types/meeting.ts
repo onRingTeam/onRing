@@ -102,3 +102,45 @@ export interface MeetingRecord {
   summary?: string;
   language: LangCode;
 }
+
+/**
+ * 회의록 목록 카드 — 백엔드 `MeetingListItemResponse`와 1:1 (camelCase).
+ * (화면정의서 2-d, 3-d)
+ */
+export interface MeetingListItem {
+  meetingId: number;
+  title: string;
+  favorite: boolean;
+  /** ISO LocalDateTime 문자열 (예: "2026-06-26T14:00:00") */
+  meetingDate: string;
+  durationSec: number | null;
+  participantNames: string[];
+  languages: BackendLang[];
+  summary: string | null;
+  status: MeetingStatus;
+}
+
+/** 화자별 발화 통계 — 백엔드 `SpeakerStatResponse`와 1:1. */
+export interface SpeakerStat {
+  userId: number;
+  name: string;
+  actionItem: string | null;
+  speechCount: number;
+  /** 발화 비율(%) */
+  speechRatio: number;
+}
+
+/**
+ * 상세회의 - AI 요약 — 백엔드 `MeetingDetailResponse`와 1:1.
+ * (화면정의서 4-b, 4-c)
+ */
+export interface MeetingDetail {
+  meetingId: number;
+  title: string;
+  meetingDate: string;
+  participantCount: number;
+  languageCount: number;
+  durationSec: number | null;
+  summary: string | null;
+  speakers: SpeakerStat[];
+}
