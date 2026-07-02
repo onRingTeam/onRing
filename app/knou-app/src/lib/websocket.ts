@@ -4,14 +4,16 @@ import type {
   ChatMessageRequest,
   ChatMessageResponse,
   ParticipantListResponse,
+  SignalMessage,
 } from '@/types/meeting';
 
 /**
  * 회의 실시간 통신용 STOMP over WebSocket 클라이언트.
  *
- * 연결 1개로 두 토픽을 구독한다 (STOMP 멀티플렉싱):
+ * 연결 1개로 세 토픽을 구독한다 (STOMP 멀티플렉싱):
  * - 채팅:     발행 `/app/meetings/{id}/send`               → 구독 `/topic/meetings/{id}`
  * - presence: 발행 `/app/meetings/{id}/participants/join`   → 구독 `/topic/meetings/{id}/participants`
+ * - 시그널링: 발행 `/app/meetings/{id}/signal`              → 구독 `/topic/meetings/{id}/signal` (WebRTC Mesh)
  *
  * CONNECT 시 JWT 검증 (운영). dev/local 은 익명 허용.
  */
@@ -24,6 +26,8 @@ export interface MeetingSocketOptions {
   onMessage: (msg: ChatMessageResponse) => void;
   /** 참여자 목록 변경 수신 */
   onParticipants?: (participants: string[]) => void;
+  /** WebRTC 시그널 수신 (Mesh) */
+  onSignal?: (msg: SignalMessage) => void;
   /** 연결 직후 이 이름으로 입장(presence) 자동 발행 */
   joinName?: string;
   onConnect?: () => void;
@@ -35,6 +39,7 @@ export class MeetingSocket {
   private client: Client | null = null;
   private chatSub: StompSubscription | null = null;
   private presenceSub: StompSubscription | null = null;
+  private signalSub: StompSubscription | null = null;
   private meetingId: number | null = null;
 
   /** 회의 ID로 STOMP 연결 + 두 토픽 구독 */
@@ -62,7 +67,13 @@ export class MeetingSocket {
           },
         );
 
-        // 3) 입장 발행 (presence 등록)
+        // 3) WebRTC 시그널링 토픽 (Mesh)
+        this.signalSub = client.subscribe(`/topic/meetings/${meetingId}/signal`, (frame) => {
+          const msg = parse<SignalMessage>(frame.body);
+          if (msg) options.onSignal?.(msg);
+        });
+
+        // 4) 입장 발행 (presence 등록)
         if (options.joinName) {
           client.publish({
             destination: `/app/meetings/${meetingId}/participants/join`,
@@ -93,12 +104,23 @@ export class MeetingSocket {
     });
   }
 
+  /** WebRTC 시그널 발행 (`/app/meetings/{id}/signal`) */
+  public sendSignal(message: SignalMessage): void {
+    if (!this.client?.connected || this.meetingId === null) return;
+    this.client.publish({
+      destination: `/app/meetings/${this.meetingId}/signal`,
+      body: JSON.stringify(message),
+    });
+  }
+
   /** 구독 해제 및 연결 종료 (서버는 disconnect 이벤트로 presence 자동 정리) */
   public disconnect(): void {
     this.chatSub?.unsubscribe();
     this.presenceSub?.unsubscribe();
+    this.signalSub?.unsubscribe();
     this.chatSub = null;
     this.presenceSub = null;
+    this.signalSub = null;
     void this.client?.deactivate();
     this.client = null;
     this.meetingId = null;

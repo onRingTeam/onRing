@@ -31,8 +31,8 @@ export function MeetingScreen() {
     if (!inMeeting) startMeeting(code ?? '');
   }, [inMeeting, code, startMeeting]);
 
-  // 회의 화면이 켜져 있는 동안만 STOMP 연결 (채팅 + presence 두 토픽 구독)
-  const { send } = useMeetingConnection(meetingId, user?.name ?? '나');
+  // 회의 화면이 켜져 있는 동안만 STOMP 연결 (채팅 + presence + WebRTC 시그널링) & 음성통화
+  const { send, setMicEnabled } = useMeetingConnection(meetingId, user?.name ?? '나');
 
   const handleSend = (text: string) => {
     send({ senderName: user?.name ?? '나', message: text, lang: toBackendLang(myLang) });
@@ -68,7 +68,7 @@ export function MeetingScreen() {
 
       <SafeAreaView edges={['bottom']} style={styles.footer}>
         <View style={styles.footerInner}>
-          <ChatInputBar onSend={handleSend} />
+          <ChatInputBar onSend={handleSend} onMicToggle={setMicEnabled} />
         </View>
       </SafeAreaView>
     </ThemedView>
