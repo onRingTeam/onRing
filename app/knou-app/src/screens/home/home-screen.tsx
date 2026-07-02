@@ -15,7 +15,7 @@ import { useActiveMeeting, useJoinMeeting, useRecentMeetings } from './hooks';
 import { CreateMeetingSheet } from './components/create-meeting-sheet';
 import { styles } from './home-screen.styles';
 
-const LOGO = require('../../../assets/images/brand/onring-symbol.png');
+const LOGO = require('../../../assets/images/brand/onring-mark.png');
 
 // 2. 페이지(함수) 시작
 export function HomeScreen() {
