@@ -1,4 +1,3 @@
-import { Platform } from 'react-native';
 import { Client, type StompSubscription } from '@stomp/stompjs';
 
 import type {
@@ -7,6 +6,7 @@ import type {
   ParticipantListResponse,
   SignalMessage,
 } from '@/types/meeting';
+import { WS_URL } from '@/lib/config';
 
 /**
  * 회의 실시간 통신용 STOMP over WebSocket 클라이언트.
@@ -18,13 +18,6 @@ import type {
  *
  * CONNECT 시 JWT 검증 (운영). dev/local 은 익명 허용.
  */
-
-// 로컬 백엔드 WS 기본값(플랫폼별). 원격은 EXPO_PUBLIC_WS_URL 로 오버라이드.
-const LOCAL_WS_URL = Platform.select({
-  android: 'ws://10.0.2.2:8080/ws',
-  default: 'ws://localhost:8080/ws',
-});
-const WS_URL = process.env.EXPO_PUBLIC_WS_URL ?? LOCAL_WS_URL;
 
 export interface MeetingSocketOptions {
   /** 채팅 메시지 수신 */
