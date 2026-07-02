@@ -11,11 +11,13 @@ import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+import { SUPABASE_ANON_KEY, SUPABASE_URL } from '@/lib/config';
+
+const supabaseUrl = SUPABASE_URL;
+const supabaseAnonKey = SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('[supabase] EXPO_PUBLIC_SUPABASE_URL / ANON_KEY 가 비어있음. .env.local 확인.');
+  console.warn('[supabase] app.json 의 extra.supabaseUrl / supabaseAnonKey 가 비어있음.');
 }
 
 const isWeb = Platform.OS === 'web';
