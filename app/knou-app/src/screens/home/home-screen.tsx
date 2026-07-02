@@ -11,6 +11,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useMeetingStore, useUiStore, useAuthStore } from '@/store';
 import type { MeetingRecord } from '@/types/meeting';
 import { useJoinMeeting, useRecentMeetings } from './hooks';
+import { CreateMeetingSheet } from './components/create-meeting-sheet';
 import { styles } from './home-screen.styles';
 
 // 2. 페이지(함수) 시작
@@ -229,6 +230,9 @@ export function HomeScreen() {
           </View>
         </ScrollView>
       </SafeAreaView>
+
+      {/* 새 회의 생성 바텀시트 (「회의 시작」 → showCreateSheet) */}
+      <CreateMeetingSheet />
     </View>
   );
 }
