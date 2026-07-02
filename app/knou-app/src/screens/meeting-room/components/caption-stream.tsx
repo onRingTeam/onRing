@@ -12,7 +12,6 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { CaptionItem } from '@/types/meeting';
-import { SPEAKER_STYLES } from '../mock-data';
 
 export interface CaptionStreamProps {
   captions: CaptionItem[];
@@ -28,13 +27,23 @@ function formatTime(ts: number) {
   });
 }
 
-export function CaptionStream({ captions, typing = true }: CaptionStreamProps) {
+export function CaptionStream({ captions, typing = false }: CaptionStreamProps) {
   const colors = useTheme();
+
+  if (captions.length === 0 && !typing) {
+    return (
+      <View style={styles.empty}>
+        <ThemedText type="small" themeColor="textSecondary">
+          아직 대화가 없습니다. 말하거나 입력하면 여기에 표시됩니다.
+        </ThemedText>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.list}>
       {captions.map((caption) => {
-        const meta = SPEAKER_STYLES[caption.speaker.id] ?? {
+        const meta = {
           initial: caption.speaker.name.charAt(0),
           color: colors.accent,
         };
@@ -103,6 +112,10 @@ const styles = StyleSheet.create({
   list: {
     gap: Spacing.four,
     paddingVertical: Spacing.two,
+  },
+  empty: {
+    paddingVertical: Spacing.six,
+    alignItems: 'center',
   },
   item: {
     gap: Spacing.two,

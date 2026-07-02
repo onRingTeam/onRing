@@ -5,7 +5,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { LangCode } from '@/types/meeting';
-import { LANGUAGES } from '../mock-data';
+import { LANGUAGES } from '@/constants/languages';
 
 export interface LanguageBarProps {
   selected: LangCode;
