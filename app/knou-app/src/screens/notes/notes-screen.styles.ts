@@ -111,9 +111,6 @@ export const styles = StyleSheet.create({
   starBtn: {
     padding: Spacing.half,
   },
-  starFilled: {
-    // Feather star는 채움이 없어 색상으로만 구분 (별도 스타일 훅 자리)
-  },
   cardActions: {
     flexDirection: 'row',
     gap: Spacing.two,
