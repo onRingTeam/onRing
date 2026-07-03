@@ -17,6 +17,8 @@ export const fromBackendLang = (lang: BackendLang | null | undefined): LangCode 
 
 /** 클라이언트 → 서버 발행 (`/app/meetings/{id}/send`). */
 export interface ChatMessageRequest {
+  /** 발화자 회원 ID (종료 후 요약 정합성 기준). */
+  senderId: number;
   senderName: string;
   message: string;
   lang?: BackendLang | null;
@@ -24,6 +26,7 @@ export interface ChatMessageRequest {
 
 /** 서버 → 구독자 브로드캐스트 (`/topic/meetings/{id}`). */
 export interface ChatMessageResponse {
+  senderId: number;
   senderName: string;
   message: string;
   lang: BackendLang | null;

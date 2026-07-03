@@ -4,6 +4,7 @@ import { authHeaders } from '@/lib/api-headers';
 /** GET /api/meetings/{id}/messages 응답 항목 (서버 MeetingMessageResponse). */
 export interface MeetingMessageDto {
   messageId: number;
+  userId: number;
   speakerName: string;
   spokenAt: string;
   original: string;
