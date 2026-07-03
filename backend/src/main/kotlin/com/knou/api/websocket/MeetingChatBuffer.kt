@@ -1,6 +1,8 @@
 package com.knou.api.websocket
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.knou.api.dto.meeting.MeetingMessageResponse
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Component
 import java.time.LocalDateTime
 import java.util.concurrent.ConcurrentHashMap
@@ -19,7 +21,10 @@ private const val MAX_MESSAGES_PER_MEETING = 1000
  * 단일 인스턴스 전제 (SimpleBroker 와 동일). 다중 인스턴스 확장 시 Redis 등으로 전환.
  */
 @Component
-class MeetingChatBuffer {
+class MeetingChatBuffer(
+    private val eventPublisher: ApplicationEventPublisher,
+    private val objectMapper: ObjectMapper,
+) {
 
     private val buffers = ConcurrentHashMap<Long, MutableList<MeetingMessageResponse>>()
     private val idSequence = AtomicLong(0)
@@ -50,9 +55,22 @@ class MeetingChatBuffer {
         }
     }
 
-    /** 회의 종료 시 버퍼 폐기. */
+    /**
+     * 회의 종료 시 버퍼 폐기.
+     * 채팅이 1건 이상이면 전체 내역을 JSON 으로 변환해 [MeetingChatArchivedEvent] 를 발행한다
+     * (회의록/요약 등 후처리는 [MeetingChatArchivedListener] 에서).
+     */
     fun clear(meetingId: Long) {
-        // TODO :회의 종료시 인메모리 채팅내역 json으로 변환 후 이벤트 발생
-        buffers.remove(meetingId)
+        val messages = buffers.remove(meetingId) ?: return
+        val snapshot = synchronized(messages) { messages.toList() }
+        if (snapshot.isEmpty()) return
+
+        eventPublisher.publishEvent(
+            MeetingChatArchivedEvent(
+                meetingId = meetingId,
+                messageCount = snapshot.size,
+                messagesJson = objectMapper.writeValueAsString(snapshot),
+            ),
+        )
     }
 }
