@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { LangCode } from '@/types/meeting';
 import { createMeeting, fetchActiveMeeting, fetchRecentMeetings, joinMeeting } from './api';
@@ -19,17 +19,26 @@ export function useActiveMeeting() {
   });
 }
 
-/** 회의 코드로 참여 (성공 시 meetingId 반환) */
+/** 회의 코드로 참여 (성공 시 meetingId 반환). 진행중 회의 캐시 갱신. */
 export function useJoinMeeting() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (meetingCode: string) => joinMeeting(meetingCode),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['active-meeting'] });
+    },
   });
 }
 
-/** 신규 회의 생성 (성공 시 meetingId·회의 코드 반환) */
+/** 신규 회의 생성 (성공 시 meetingId·회의 코드 반환). 진행중/최근 회의 캐시 갱신. */
 export function useCreateMeeting() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: (params: { title: string; language: LangCode }) =>
       createMeeting(params.title, params.language),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['active-meeting'] });
+      qc.invalidateQueries({ queryKey: ['recent-meetings'] });
+    },
   });
 }
