@@ -171,6 +171,8 @@ class MeetingService(
         val filtered = attendanceRepository
             .findAllByUser_UserIdOrderByMeeting_MeetingDateDesc(userId)
             .asSequence()
+            // 회의록 목록에는 종료(ENDED)된 회의만 노출 (진행중 회의는 제외)
+            .filter { it.meeting.status == MeetingStatus.ENDED.name }
             .filter { !favoriteOnly || it.favoriteYn == "Y" }
             .filter { att ->
                 kw == null || run {
