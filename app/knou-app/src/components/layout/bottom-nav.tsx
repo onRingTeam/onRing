@@ -7,8 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useUiStore } from '@/store';
-import { useActiveMeeting } from '@/screens/home/hooks';
+import { useMeetingStore, useUiStore } from '@/store';
 
 type NavTab = 'index' | 'notes' | 'settings';
 
@@ -25,9 +24,9 @@ export function BottomNav() {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
-  // 진행중 회의 판단은 서버 active 조회로 통일 (홈과 동일 소스).
-  // 회의 생성 시 active-meeting 캐시가 무효화돼 즉시 빨강 활성된다.
-  const { data: activeMeeting } = useActiveMeeting();
+  // 진행중 회의 판단은 Zustand 스토어 activeMeeting 단일 소스로 통일 (홈과 동일).
+  // 생성/참여 시 즉시 세팅, 종료 시 해제되어 아이콘 활성·이동이 정합된다.
+  const activeMeeting = useMeetingStore((s) => s.activeMeeting);
   const setShowCreateSheet = useUiStore((s) => s.setShowCreateSheet);
 
   const isActive = (tab: NavTab) => {

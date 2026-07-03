@@ -1,17 +1,17 @@
 // 1. Import
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ScrollView, View, TouchableOpacity, TextInput, Modal } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useUiStore, useAuthStore } from '@/store';
+import { useUiStore, useAuthStore, useMeetingStore } from '@/store';
 import type { MeetingListItem } from '@/types/meeting';
 import { formatDuration, formatMeetingDate } from '@/utils/meeting-format';
-import { useActiveMeeting, useJoinMeeting, useRecentMeetings } from './hooks';
+import { useHydrateActiveMeeting, useJoinMeeting, useRecentMeetings } from './hooks';
 import { CreateMeetingSheet } from './components/create-meeting-sheet';
 import { styles } from './home-screen.styles';
 
@@ -27,13 +27,21 @@ export function HomeScreen() {
   const [showActiveConfirm, setShowActiveConfirm] = useState(false);
 
   // 4. 전역 상태 & 비동기 서비스
-  // - Zustand: 로그인 사용자, UI 모달 제어
+  // - Zustand: 로그인 사용자, UI 모달 제어, 진행중 회의(단일 소스)
   const user = useAuthStore((s) => s.user);
   const setShowCreateSheet = useUiStore((s) => s.setShowCreateSheet);
-  // - TanStack Query: 최근 회의 목록 / 진행중 회의(홈 진행중 confirm 판단)
+  const activeMeeting = useMeetingStore((s) => s.activeMeeting);
+  const hydrateActiveMeeting = useHydrateActiveMeeting();
+  // - TanStack Query: 최근 회의 목록
   const { data: recentMeetings = [], isLoading } = useRecentMeetings();
-  const { data: activeMeeting } = useActiveMeeting();
   const joinMutation = useJoinMeeting();
+
+  // 홈에 진입할 때마다 서버 기준 진행중 회의를 스토어에 동기화 (종료/생성 후 상태 정합).
+  useFocusEffect(
+    useCallback(() => {
+      hydrateActiveMeeting();
+    }, [hydrateActiveMeeting]),
+  );
 
   // 5. 함수들
   const handleStartMeeting = () => {

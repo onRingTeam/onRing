@@ -25,6 +25,7 @@ export function MeetingScreen() {
   const { inMeeting, captions, elapsed, endMeeting } = useMeetingSession();
   const endMutation = useEndMeeting();
   const startMeeting = useMeetingStore((s) => s.startMeeting);
+  const clearActiveMeeting = useMeetingStore((s) => s.clearActiveMeeting);
   const participants = useMeetingStore((s) => s.participants);
   const user = useAuthStore((s) => s.user);
 
@@ -56,6 +57,8 @@ export function MeetingScreen() {
         console.warn('[meeting] 종료 실패(개설자 아님이거나 이미 종료)', e);
       }
     }
+    // 종료 시점에 스토어 진행중 회의 상태 해제 (홈/회의탭 즉시 정합).
+    clearActiveMeeting();
     endMeeting(captions);
     // 종료 후엔 회의화면을 벗어나 홈으로 (탭 화면이라 back()으론 안 벗어나짐).
     router.replace('/(tabs)');
