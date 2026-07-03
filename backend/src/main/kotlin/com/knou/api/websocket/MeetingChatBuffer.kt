@@ -52,6 +52,7 @@ class MeetingChatBuffer {
 
     /** 회의 종료 시 버퍼 폐기. */
     fun clear(meetingId: Long) {
+        // TODO :회의 종료시 인메모리 채팅내역 json으로 변환 후 이벤트 발생
         buffers.remove(meetingId)
     }
 }
