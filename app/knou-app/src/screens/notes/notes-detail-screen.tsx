@@ -1,5 +1,5 @@
 // 1. Import
-import { ScrollView, View, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, ScrollView, View, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -13,19 +13,23 @@ import { styles } from './notes-detail-screen.styles';
 
 export interface NotesDetailScreenProps {
   id: string;
+  /** 방금 종료한 회의 → 요약 생성 완료까지 폴링하며 '생성 중' 표시. */
+  waitForSummary?: boolean;
 }
 
 /** 화자 구분용 색상 팔레트 (발화 통계 바). */
 const SPEAKER_COLORS = ['#1A3461', '#2D67C8', '#4A90D9', '#7DB0E8', '#A9CCEF'];
 
 // 2. 페이지(함수) 시작
-export function NotesDetailScreen({ id }: NotesDetailScreenProps) {
+export function NotesDetailScreen({ id, waitForSummary = false }: NotesDetailScreenProps) {
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
   const router = useRouter();
 
   const meetingId = Number(id);
-  const { data: detail, isLoading, isError } = useMeetingDetail(meetingId);
+  const { data: detail, isLoading, isError } = useMeetingDetail(meetingId, { waitForSummary });
+  // 요약이 아직 없고 폴링 중(방금 종료) → '생성 중' 표시 (상한 도달 시 refetchInterval 이 멈추면서 자연히 해제).
+  const summaryPending = waitForSummary && !detail?.summary;
 
   // 3. 상단 통계 카드 데이터
   const stats = detail
@@ -95,9 +99,22 @@ export function NotesDetailScreen({ id }: NotesDetailScreenProps) {
             {/* 요약 내용 */}
             <View style={[styles.card, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
               <ThemedText type="smallBold">요약 내용</ThemedText>
-              <ThemedText type="small" themeColor={detail.summary ? 'text' : 'textSecondary'} style={styles.summaryText}>
-                {detail.summary ?? 'AI 요약이 아직 없습니다.'}
-              </ThemedText>
+              {detail.summary ? (
+                <ThemedText type="small" themeColor="text" style={styles.summaryText}>
+                  {detail.summary}
+                </ThemedText>
+              ) : summaryPending ? (
+                <View style={styles.summaryPending}>
+                  <ActivityIndicator size="small" color={colors.accent} />
+                  <ThemedText type="small" themeColor="textSecondary">
+                    AI 요약 생성 중...
+                  </ThemedText>
+                </View>
+              ) : (
+                <ThemedText type="small" themeColor="textSecondary" style={styles.summaryText}>
+                  AI 요약이 아직 없습니다.
+                </ThemedText>
+              )}
             </View>
 
             {/* 액션 아이템 */}
