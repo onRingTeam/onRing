@@ -6,7 +6,6 @@ import com.knou.api.dto.common.PageResponse
 import com.knou.api.dto.meeting.CreateMeetingRequest
 import com.knou.api.dto.meeting.MeetingDetailResponse
 import com.knou.api.dto.meeting.MeetingMessageResponse
-
 import com.knou.api.dto.meeting.MeetingListItemResponse
 import com.knou.api.dto.meeting.MeetingRoomResponse
 import com.knou.api.dto.meeting.SpeakerStatResponse
@@ -15,14 +14,19 @@ import com.knou.api.entity.MeetingEntity
 import com.knou.api.repository.MeetingAttendanceRepository
 import com.knou.api.repository.MeetingRepository
 import com.knou.api.repository.UserRepository
+import com.knou.api.websocket.MeetingChatBuffer
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
+import java.time.Duration
 import java.time.LocalDateTime
 
 /** 회의 코드 문자셋 — 혼동 쉬운 O,0,I,1,L 제외. */
 private const val CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"
+
+/** 홈 최근 회의 기본 개수 (화면정의서 2-d, api-spec: 최근 회의 4건). */
+private const val RECENT_LIMIT = 4
 
 /**
  * 회의 생성/참여/조회 비즈니스 로직.
