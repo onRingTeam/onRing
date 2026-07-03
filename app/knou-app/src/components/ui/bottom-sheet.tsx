@@ -1,6 +1,14 @@
-import { StyleSheet, View, Modal, TouchableOpacity, type ViewProps } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+  type ViewProps,
+} from 'react-native';
 
-import { Colors, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 export interface BottomSheetProps extends ViewProps {
@@ -14,13 +22,17 @@ export function BottomSheet({ visible, onClose, children, style, ...props }: Bot
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+      {/* 키보드가 올라오면 시트를 그 위로 밀어올림 */}
+      <KeyboardAvoidingView
+        style={styles.backdrop}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
         <TouchableOpacity style={styles.backdropTouch} onPress={onClose} activeOpacity={1} />
         <View style={[styles.sheet, { backgroundColor: theme.background }, style]} {...props}>
           <View style={styles.grabber} />
           {children}
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

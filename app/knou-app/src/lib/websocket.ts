@@ -33,12 +33,17 @@ export interface MeetingSocketOptions {
   token?: string;
 }
 
+/** 오프라인 발신 큐 상한 (초과 시 오래된 것부터 폐기). */
+const MAX_PENDING_SENDS = 50;
+
 export class MeetingSocket {
   private client: Client | null = null;
   private chatSub: StompSubscription | null = null;
   private presenceSub: StompSubscription | null = null;
   private signalSub: StompSubscription | null = null;
   private meetingId: number | null = null;
+  /** 연결 끊김 동안 보낸 채팅 — 재연결 시 순서대로 발행. */
+  private pendingSends: ChatMessageRequest[] = [];
 
   /** 회의 ID로 STOMP 연결 + 두 토픽 구독 */
   public connect(meetingId: number, options: MeetingSocketOptions): void {
@@ -49,6 +54,10 @@ export class MeetingSocket {
       brokerURL: WS_URL,
       connectHeaders: options.token ? { Authorization: `Bearer ${options.token}` } : {},
       reconnectDelay: 5000,
+      // RN Android WebSocket 이 발신 텍스트 프레임의 STOMP NULL(\0) 종결자를 누락시켜
+      // 서버가 프레임을 인식하지 못함 → 바이너리 프레임 강제로 우회 (stompjs RN 권장 설정)
+      forceBinaryWSFrames: true,
+      appendMissingNULLonIncoming: true,
       onConnect: () => {
         // 1) 채팅 토픽
         this.chatSub = client.subscribe(`/topic/meetings/${meetingId}`, (frame) => {
@@ -79,23 +88,37 @@ export class MeetingSocket {
           });
         }
 
+        // 5) 끊김 동안 쌓인 발신 채팅 재전송
+        const pending = this.pendingSends;
+        this.pendingSends = [];
+        for (const payload of pending) this.send(payload);
+
         options.onConnect?.();
       },
       onStompError: (frame) => {
         console.warn('[MeetingSocket] STOMP error', frame.headers['message'], frame.body);
       },
       onWebSocketError: (e) => {
-        console.warn('[MeetingSocket] WebSocket error', e);
+        console.warn('[MeetingSocket] WebSocket error', (e as { message?: string })?.message ?? e);
       },
+      onWebSocketClose: (e) => {
+        console.warn('[MeetingSocket] WebSocket closed', e?.code, e?.reason);
+      },
+      debug: __DEV__ ? (m) => console.log('[MeetingSocket:debug]', m) : undefined,
     });
 
     client.activate();
     this.client = client;
   }
 
-  /** 채팅 메시지 발행 (`/app/meetings/{id}/send`) */
+  /** 채팅 메시지 발행 (`/app/meetings/{id}/send`). 미연결 시 큐에 담아 재연결 후 발행. */
   public send(payload: ChatMessageRequest): void {
-    if (!this.client?.connected || this.meetingId === null) return;
+    if (this.meetingId === null) return;
+    if (!this.client?.connected) {
+      this.pendingSends.push(payload);
+      if (this.pendingSends.length > MAX_PENDING_SENDS) this.pendingSends.shift();
+      return;
+    }
     this.client.publish({
       destination: `/app/meetings/${this.meetingId}/send`,
       body: JSON.stringify(payload),

@@ -3,18 +3,35 @@ import { PermissionsAndroid, Platform } from 'react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import type { CaptionItem, ChatMessageRequest, ChatMessageResponse } from '@/types/meeting';
-import { fromBackendLang } from '@/types/meeting';
+import { fromBackendLang, toBackendLang } from '@/types/meeting';
 import { useElapsed } from '@/hooks/use-elapsed';
-import { useMeetingStore } from '@/store';
+import { useMeetingStore, useSettingsStore } from '@/store';
 import { MeetingSocket } from '@/lib/websocket';
 import { MeshVoiceCall } from '@/lib/webrtc/mesh-voice-call';
 import { endMeeting as endMeetingApi } from './api';
+import { LiveStt } from '@/lib/stt/live-stt';
+import { fetchMessages } from './api';
 
-/** Android 마이크 권한 요청 (iOS는 네이티브 권한 팝업 자동). */
+/**
+ * 음성통화 권한 요청 (iOS는 getUserMedia 시 네이티브 팝업 자동).
+ * - RECORD_AUDIO: 필수 — 거부 시 음성 불가.
+ * - BLUETOOTH_CONNECT(Android 12+): 블루투스 이어폰 라우팅용 — 거부해도 통화는 가능.
+ */
 async function ensureMicPermission(): Promise<boolean> {
   if (Platform.OS !== 'android') return true;
-  const result = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
-  return result === PermissionsAndroid.RESULTS.GRANTED;
+
+  const mic = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO, {
+    title: '마이크 권한',
+    message: '회의 중 음성 대화를 위해 마이크 접근이 필요합니다.',
+    buttonPositive: '허용',
+    buttonNegative: '거부',
+  });
+
+  if (Platform.Version >= 31) {
+    await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT).catch(() => null);
+  }
+
+  return mic === PermissionsAndroid.RESULTS.GRANTED;
 }
 
 /** 서버 채팅 메시지(STOMP) → 화면 자막(CaptionItem) 매핑 */
@@ -39,8 +56,12 @@ function toCaption(msg: ChatMessageResponse): CaptionItem {
 export function useMeetingConnection(meetingId: number | null, senderName: string) {
   const addCaption = useMeetingStore((s) => s.addCaption);
   const setParticipants = useMeetingStore((s) => s.setParticipants);
+  const myLanguage = useSettingsStore((s) => s.myLanguage);
   const socketRef = useRef<MeetingSocket | null>(null);
   const meshRef = useRef<MeshVoiceCall | null>(null);
+  const sttRef = useRef<LiveStt | null>(null);
+  // 마지막으로 수신한 채팅의 서버 시각 — 재연결 시 이 시각 이후 놓친 메시지 복구 기준
+  const lastSentAtRef = useRef<string | null>(null);
   // 세션 고유 peerId (Mesh 시그널링 식별자)
   const peerIdRef = useRef<string>(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
 
@@ -52,16 +73,36 @@ export function useMeetingConnection(meetingId: number | null, senderName: strin
       peerId: peerIdRef.current,
       sendSignal: (msg) => socket.sendSignal(msg),
     });
+    // 내 발화 라이브 STT → 확정 문장을 채팅(자막) 채널로 발행 (설계 §2: 자기 마이크만 STT)
+    const stt = new LiveStt({
+      lang: myLanguage,
+      onFinal: (text) =>
+        socket.send({ senderName, message: text, lang: toBackendLang(myLanguage) }),
+    });
 
     socket.connect(meetingId, {
       joinName: senderName,
-      onMessage: (msg) => addCaption(toCaption(msg)),
+      onMessage: (msg) => {
+        lastSentAtRef.current = msg.sentAt;
+        addCaption(toCaption(msg));
+      },
       onParticipants: (list) => setParticipants(list),
       onSignal: (msg) => void mesh.handleSignal(msg),
       onConnect: async () => {
-        // 회의 입장 시 음성통화(WebRTC) 자동 시작. 마이크 권한 필요.
+        // 끊김 동안 놓친 채팅 복구 (서버 인메모리 버퍼, 시간순). 중복은 store 에서 id 로 걸러짐.
+        void fetchMessages(meetingId, lastSentAtRef.current ?? undefined)
+          .then((missed) => {
+            for (const m of missed) {
+              lastSentAtRef.current = m.spokenAt;
+              addCaption(toCaption({ senderName: m.speakerName, message: m.original, lang: null, sentAt: m.spokenAt }));
+            }
+          })
+          .catch((e) => console.warn('[chat] 놓친 메시지 복구 실패', e));
+
+        // 회의 입장 시 음성통화(WebRTC) + 내 발화 STT 자동 시작. 마이크 권한 필요.
         if (await ensureMicPermission()) {
           await mesh.start().catch((e) => console.warn('[voice] start 실패', e));
+          await stt.start().catch((e) => console.warn('[stt] start 실패', e));
         } else {
           console.warn('[voice] 마이크 권한 거부됨');
         }
@@ -69,25 +110,35 @@ export function useMeetingConnection(meetingId: number | null, senderName: strin
     });
     socketRef.current = socket;
     meshRef.current = mesh;
+    sttRef.current = stt;
 
     return () => {
+      stt.stop();
       mesh.stop();
       socket.disconnect();
       socketRef.current = null;
       meshRef.current = null;
+      sttRef.current = null;
     };
-  }, [meetingId, senderName, addCaption, setParticipants]);
+  }, [meetingId, senderName, myLanguage, addCaption, setParticipants]);
 
   const send = useCallback((payload: ChatMessageRequest) => {
     socketRef.current?.send(payload);
   }, []);
 
-  /** 마이크 on/off (WebRTC 송신 트랙 토글) */
+  /** 마이크 on/off — WebRTC 송신 트랙 + 내 발화 STT 를 함께 토글 */
   const setMicEnabled = useCallback((enabled: boolean) => {
     meshRef.current?.setMicEnabled(enabled);
+    if (enabled) void sttRef.current?.start();
+    else sttRef.current?.stop();
   }, []);
 
-  return { send, setMicEnabled };
+  /** 스피커폰 on/off (off = 수화부/이어폰) */
+  const setSpeakerEnabled = useCallback((enabled: boolean) => {
+    meshRef.current?.setSpeakerEnabled(enabled);
+  }, []);
+
+  return { send, setMicEnabled, setSpeakerEnabled };
 }
 
 /**

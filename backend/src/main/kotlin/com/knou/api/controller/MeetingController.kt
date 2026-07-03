@@ -14,6 +14,7 @@ import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
+import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
+import java.time.LocalDateTime
 
 /**
  * 홈(2) · 회의록(3) · 상세회의(4) · 회의화면(5) - 회의 관련 API.
@@ -101,14 +103,21 @@ class MeetingController(
         return ResponseEntity.ok(meetingService.detail(meetingId))
     }
 
-    @Operation(summary = "상세회의 - 전체 대화", description = "발화자·시간·원문·번역 메시지 목록. (화면 4-d)")
+    @Operation(
+        summary = "상세회의 - 전체 대화",
+        description = "발화자·시간·원문·번역 메시지 목록. (화면 4-d) " +
+            "after 지정 시 해당 시각 이후만 반환 — 웹소켓 재연결 시 놓친 메시지 복구용.",
+    )
     @GetMapping("/{meetingId}/messages")
     fun getMeetingMessages(
         @RequestHeader("X-User-Id") userId: Long,
         @PathVariable meetingId: Long,
+        @Parameter(description = "이 시각(ISO-8601) 이후 메시지만 조회")
+        @RequestParam(required = false)
+        @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
+        after: LocalDateTime?,
     ): ResponseEntity<List<MeetingMessageResponse>> {
-        // TODO: MeetingService.messages(meetingId, userId) — 조회자 언어로 번역
-        return ResponseEntity.ok(emptyList())
+        return ResponseEntity.ok(meetingService.messages(meetingId, after))
     }
 
     @Operation(summary = "즐겨찾기 토글", description = "회의 즐겨찾기 여부를 토글한다. (화면 3-c, 3-d)")
@@ -128,6 +137,7 @@ class MeetingController(
         @PathVariable meetingId: Long,
     ): ResponseEntity<Void> {
         meetingService.end(userId, meetingId)
+        meetingService.clearChat(meetingId)
         return ResponseEntity.noContent().build()
     }
 
