@@ -7,7 +7,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Colors, Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useMeetingStore, useUiStore } from '@/store';
+import { useUiStore } from '@/store';
+import { useActiveMeeting } from '@/screens/home/hooks';
 
 type NavTab = 'index' | 'notes' | 'settings';
 
@@ -24,7 +25,9 @@ export function BottomNav() {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
-  const inMeeting = useMeetingStore((s) => s.inMeeting);
+  // 진행중 회의 판단은 서버 active 조회로 통일 (홈과 동일 소스).
+  // 회의 생성 시 active-meeting 캐시가 무효화돼 즉시 빨강 활성된다.
+  const { data: activeMeeting } = useActiveMeeting();
   const setShowCreateSheet = useUiStore((s) => s.setShowCreateSheet);
 
   const isActive = (tab: NavTab) => {
@@ -42,13 +45,19 @@ export function BottomNav() {
   };
 
   const handleMeeting = () => {
-    if (!inMeeting) {
+    if (!activeMeeting) {
+      // 진행중 회의 없음 → 홈으로 이동 후 회의 생성 바텀시트
       router.push('/(tabs)' as any);
       setShowCreateSheet(true);
     } else if (isMeetingActive) {
+      // 이미 회의 화면이면 홈으로 토글
       router.push('/(tabs)' as any);
     } else {
-      router.push('/(tabs)/meeting' as any);
+      // 진행중 회의로 이동
+      router.push({
+        pathname: '/(tabs)/meeting',
+        params: { meetingId: String(activeMeeting.meetingId), code: activeMeeting.meetingCode },
+      } as any);
     }
   };
 
@@ -79,7 +88,7 @@ export function BottomNav() {
 
       {/* 3. 회의 (마이크 — 항상 강조색, 회의 중엔 빨강) */}
       <TouchableOpacity style={styles.tab} onPress={handleMeeting} activeOpacity={0.7}>
-        <View style={[styles.iconBox, { backgroundColor: inMeeting ? colors.error : colors.primary }]}>
+        <View style={[styles.iconBox, { backgroundColor: activeMeeting ? colors.error : colors.primary }]}>
           <Feather name={ICON.meeting} size={24} color="#ffffff" />
         </View>
         <ThemedText style={[styles.label, { color: isMeetingActive ? colors.primary : colors.textSecondary }]}>
