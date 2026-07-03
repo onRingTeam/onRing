@@ -5,6 +5,7 @@ import {
   RTCPeerConnection,
   RTCSessionDescription,
 } from 'react-native-webrtc';
+import InCallManager from 'react-native-incall-manager';
 
 import type { SignalMessage } from '@/types/meeting';
 import { ICE_SERVERS } from './ice-config';
@@ -40,6 +41,9 @@ export class MeshVoiceCall {
   /** 로컬 마이크 확보 후 방에 입장 공지. (호출 전 RECORD_AUDIO 권한 필요) */
   async start(): Promise<void> {
     this.localStream = (await mediaDevices.getUserMedia({ audio: true, video: false })) as MediaStream;
+    // 통화용 오디오 세션 시작: 회의 앱이므로 스피커폰 기본 (이어폰/블루투스 연결 시 자동 우선)
+    InCallManager.start({ media: 'audio' });
+    InCallManager.setForceSpeakerphoneOn(true);
     this.sendSignal({ type: 'join', from: this.peerId, to: null });
   }
 
@@ -88,6 +92,11 @@ export class MeshVoiceCall {
     });
   }
 
+  /** 스피커폰 on/off (off = 수화부/이어폰) */
+  setSpeakerEnabled(enabled: boolean): void {
+    InCallManager.setForceSpeakerphoneOn(enabled);
+  }
+
   /** 방 퇴장: leave 공지 후 모든 피어/스트림 정리 */
   stop(): void {
     this.sendSignal({ type: 'leave', from: this.peerId, to: null });
@@ -95,6 +104,7 @@ export class MeshVoiceCall {
     this.peers.clear();
     this.localStream?.getTracks().forEach((t) => t.stop());
     this.localStream = null;
+    InCallManager.stop();
   }
 
   private async makeOffer(remoteId: string): Promise<void> {
@@ -109,6 +119,11 @@ export class MeshVoiceCall {
     if (existing) return existing;
 
     const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+
+    // @ts-expect-error react-native-webrtc 이벤트 타입
+    pc.addEventListener('connectionstatechange', () => {
+      console.log(`[voice] peer ${remoteId} 상태: ${pc.connectionState}`);
+    });
 
     // 로컬 마이크 트랙 송신
     this.localStream?.getTracks().forEach((track) => {
