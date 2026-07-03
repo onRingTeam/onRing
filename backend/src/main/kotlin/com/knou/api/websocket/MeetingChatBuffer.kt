@@ -30,9 +30,10 @@ class MeetingChatBuffer(
     private val idSequence = AtomicLong(0)
 
     /** 메시지 보관. 부여된 messageId 를 포함한 완성 메시지를 반환한다. */
-    fun append(meetingId: Long, senderName: String, message: String, sentAt: LocalDateTime): MeetingMessageResponse {
+    fun append(meetingId: Long, senderId: Long, senderName: String, message: String, sentAt: LocalDateTime): MeetingMessageResponse {
         val stored = MeetingMessageResponse(
             messageId = idSequence.incrementAndGet(),
+            userId = senderId,
             speakerName = senderName,
             spokenAt = sentAt,
             original = message,

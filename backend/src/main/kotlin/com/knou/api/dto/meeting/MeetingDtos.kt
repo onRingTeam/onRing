@@ -146,6 +146,9 @@ data class MeetingMessageResponse(
     @field:Schema(description = "메시지 ID", example = "1001")
     val messageId: Long,
 
+    @field:Schema(description = "발화자 회원 ID (종료 후 요약 정합성 기준)", example = "1")
+    val userId: Long,
+
     @field:Schema(description = "발화자명", example = "고윤아")
     val speakerName: String,
 
