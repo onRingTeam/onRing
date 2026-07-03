@@ -7,6 +7,7 @@ import { useElapsed } from '@/hooks/use-elapsed';
 import { useMeetingStore } from '@/store';
 import { MeetingSocket } from '@/lib/websocket';
 import { MeshVoiceCall } from '@/lib/webrtc/mesh-voice-call';
+import { fetchMessages } from './api';
 
 /** Android 마이크 권한 요청 (iOS는 네이티브 권한 팝업 자동). */
 async function ensureMicPermission(): Promise<boolean> {
@@ -39,6 +40,8 @@ export function useMeetingConnection(meetingId: number | null, senderName: strin
   const setParticipants = useMeetingStore((s) => s.setParticipants);
   const socketRef = useRef<MeetingSocket | null>(null);
   const meshRef = useRef<MeshVoiceCall | null>(null);
+  // 마지막으로 수신한 채팅의 서버 시각 — 재연결 시 이 시각 이후 놓친 메시지 복구 기준
+  const lastSentAtRef = useRef<string | null>(null);
   // 세션 고유 peerId (Mesh 시그널링 식별자)
   const peerIdRef = useRef<string>(`${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
 
@@ -53,10 +56,23 @@ export function useMeetingConnection(meetingId: number | null, senderName: strin
 
     socket.connect(meetingId, {
       joinName: senderName,
-      onMessage: (msg) => addCaption(toCaption(msg)),
+      onMessage: (msg) => {
+        lastSentAtRef.current = msg.sentAt;
+        addCaption(toCaption(msg));
+      },
       onParticipants: (list) => setParticipants(list),
       onSignal: (msg) => void mesh.handleSignal(msg),
       onConnect: async () => {
+        // 끊김 동안 놓친 채팅 복구 (서버 인메모리 버퍼, 시간순). 중복은 store 에서 id 로 걸러짐.
+        void fetchMessages(meetingId, lastSentAtRef.current ?? undefined)
+          .then((missed) => {
+            for (const m of missed) {
+              lastSentAtRef.current = m.spokenAt;
+              addCaption(toCaption({ senderName: m.speakerName, message: m.original, lang: null, sentAt: m.spokenAt }));
+            }
+          })
+          .catch((e) => console.warn('[chat] 놓친 메시지 복구 실패', e));
+
         // 회의 입장 시 음성통화(WebRTC) 자동 시작. 마이크 권한 필요.
         if (await ensureMicPermission()) {
           await mesh.start().catch((e) => console.warn('[voice] start 실패', e));
