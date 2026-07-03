@@ -151,6 +151,8 @@ class MeetingService(
     fun recent(userId: Long, limit: Int = RECENT_LIMIT): List<MeetingListItemResponse> {
         return attendanceRepository
             .findAllByUser_UserIdOrderByMeeting_MeetingDateDesc(userId)
+            // 진행중 회의는 최근 회의에서 제외 (종료된 회의만 노출)
+            .filter { it.meeting.status == MeetingStatus.ENDED.name }
             .take(limit)
             .map { toListItem(it) }
     }
