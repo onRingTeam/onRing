@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { ScrollView, View, TouchableOpacity, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { AntDesign, Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
@@ -165,8 +165,8 @@ export function NotesScreen() {
                     accessibilityLabel={m.favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
                     accessibilityState={{ selected: m.favorite }}
                   >
-                    <AntDesign
-                      name={m.favorite ? 'star' : 'staro'}
+                    <Ionicons
+                      name={m.favorite ? 'star' : 'star-outline'}
                       size={16}
                       color={m.favorite ? '#F5B301' : colors.textSecondary}
                     />
