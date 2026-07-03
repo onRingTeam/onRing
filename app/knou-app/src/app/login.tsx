@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AntDesign } from '@expo/vector-icons';
 
@@ -7,6 +7,8 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { loginWithGoogle } from '@/lib/auth';
+
+const SYMBOL = require('../../assets/images/brand/onring-symbol.png');
 
 /**
  * 로그인 화면. 구글 로그인 하나로 진입한다.
@@ -34,11 +36,9 @@ export default function LoginScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.hero}>
-        <ThemedText type="title" style={[styles.brand, { color: colors.primary }]}>
-          onRing
-        </ThemedText>
+        <Image source={SYMBOL} style={styles.symbol} resizeMode="contain" accessibilityLabel="OnRing 로고" />
         <ThemedText style={[styles.tagline, { color: colors.textSecondary }]}>
-          실시간 회의, 지금 시작하세요
+            언어의 장벽을 끄고, 소통의 링을 켜다.
         </ThemedText>
       </View>
 
@@ -68,11 +68,12 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'space-between', paddingHorizontal: 24, paddingVertical: 48 },
-  hero: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12 },
+  container: { flex: 1, paddingHorizontal: 24, paddingVertical: 48 },
+  hero: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: 12, paddingBottom: 200 },
+  symbol: { width: '90%', maxWidth: 300, aspectRatio: 1, marginBottom: -130 },
   brand: { fontSize: 40, fontWeight: '800' },
-  tagline: { fontSize: 15 },
-  actions: { gap: 16 },
+  tagline: { fontSize: 17 },
+  actions: { position: 'absolute', left: 24, right: 24, bottom: 48, gap: 16 },
   googleBtn: {
     flexDirection: 'row',
     alignItems: 'center',

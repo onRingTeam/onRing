@@ -67,8 +67,8 @@ class MeetingController(
     fun getActiveMeeting(
         @RequestHeader("X-User-Id") userId: Long,
     ): ResponseEntity<MeetingRoomResponse> {
-        // TODO: MeetingService.activeMeeting(userId) — 진행중 회의 없으면 noContent
-        return ResponseEntity.noContent().build()
+        val active = meetingService.activeMeeting(userId)
+        return if (active != null) ResponseEntity.ok(active) else ResponseEntity.noContent().build()
     }
 
     @Operation(summary = "최근 회의 목록", description = "홈 화면에 노출할 최근 회의 4건. (화면 2-d)")
@@ -76,8 +76,7 @@ class MeetingController(
     fun getRecentMeetings(
         @RequestHeader("X-User-Id") userId: Long,
     ): ResponseEntity<List<MeetingListItemResponse>> {
-        // TODO: MeetingService.recent(userId, limit = 4)
-        return ResponseEntity.ok(emptyList())
+        return ResponseEntity.ok(meetingService.recent(userId))
     }
 
     @Operation(
@@ -92,10 +91,7 @@ class MeetingController(
         @Parameter(description = "페이지 (0-base)") @RequestParam(defaultValue = "0") page: Int,
         @Parameter(description = "페이지 크기") @RequestParam(defaultValue = "20") size: Int,
     ): ResponseEntity<PageResponse<MeetingListItemResponse>> {
-        // TODO: MeetingService.search(userId, keyword, favoriteOnly, page, size)
-        return ResponseEntity.ok(
-            PageResponse(page = page, size = size, totalElements = 0, totalPages = 0, content = emptyList()),
-        )
+        return ResponseEntity.ok(meetingService.search(userId, keyword, favoriteOnly, page, size))
     }
 
     @Operation(summary = "상세회의 - AI 요약", description = "요약 내용·액션아이템·화자별 발화빈도. (화면 4-b, 4-c)")
@@ -104,19 +100,7 @@ class MeetingController(
         @RequestHeader("X-User-Id") userId: Long,
         @PathVariable meetingId: Long,
     ): ResponseEntity<MeetingDetailResponse> {
-        // TODO: MeetingService.detail(meetingId)
-        return ResponseEntity.ok(
-            MeetingDetailResponse(
-                meetingId = meetingId,
-                title = "주간 정기회의",
-                meetingDate = java.time.LocalDateTime.now(),
-                participantCount = 0,
-                languageCount = 0,
-                durationSec = null,
-                summary = null,
-                speakers = emptyList(),
-            ),
-        )
+        return ResponseEntity.ok(meetingService.detail(meetingId))
     }
 
     @Operation(
@@ -142,7 +126,7 @@ class MeetingController(
         @RequestHeader("X-User-Id") userId: Long,
         @PathVariable meetingId: Long,
     ): ResponseEntity<Void> {
-        // TODO: MeetingService.toggleFavorite(userId, meetingId)
+        meetingService.toggleFavorite(userId, meetingId)
         return ResponseEntity.noContent().build()
     }
 
@@ -152,7 +136,7 @@ class MeetingController(
         @RequestHeader("X-User-Id") userId: Long,
         @PathVariable meetingId: Long,
     ): ResponseEntity<Void> {
-        // TODO: MeetingService.end(userId, meetingId) — 개설자 권한 체크
+        meetingService.end(userId, meetingId)
         meetingService.clearChat(meetingId)
         return ResponseEntity.noContent().build()
     }

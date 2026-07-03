@@ -1,10 +1,9 @@
 package com.knou.api.controller
 
-import com.knou.api.dto.common.FontSize
-import com.knou.api.dto.common.Language
 import com.knou.api.dto.user.UpdateChatSettingsRequest
 import com.knou.api.dto.user.UpdateProfileRequest
 import com.knou.api.dto.user.UserProfileResponse
+import com.knou.api.service.UserService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
@@ -26,7 +25,9 @@ import org.springframework.web.bind.annotation.RestController
 @Tag(name = "User", description = "회원 프로필 / 설정")
 @RestController
 @RequestMapping("/api/users")
-class UserController {
+class UserController(
+    private val userService: UserService,
+) {
 
     @Operation(summary = "내 프로필 조회", description = "이름·이메일·구독여부·잔여횟수 및 채팅 설정을 조회한다. (화면 6-a, 6-c)")
     @GetMapping("/me")
@@ -34,20 +35,7 @@ class UserController {
         @Parameter(description = "현재 사용자 ID (임시)", example = "1")
         @RequestHeader("X-User-Id") userId: Long,
     ): ResponseEntity<UserProfileResponse> {
-        // TODO: UserService.getProfile(userId)
-        return ResponseEntity.ok(
-            UserProfileResponse(
-                userId = userId,
-                email = "user@knou.ac.kr",
-                name = "고윤아",
-                social = true,
-                subscribed = false,
-                remainingCount = 5,
-                language = Language.KO,
-                fontSize = FontSize.MEDIUM,
-                vibration = false,
-            ),
-        )
+        return ResponseEntity.ok(userService.getProfile(userId))
     }
 
     @Operation(summary = "프로필 수정", description = "회원명을 수정한다. 소셜 로그인 사용자는 수정 불가. (화면 6-a-i)")
@@ -56,7 +44,7 @@ class UserController {
         @RequestHeader("X-User-Id") userId: Long,
         @Valid @RequestBody request: UpdateProfileRequest,
     ): ResponseEntity<Void> {
-        // TODO: UserService.updateProfile(userId, request)
+        userService.updateProfile(userId, request)
         return ResponseEntity.noContent().build()
     }
 
@@ -66,7 +54,7 @@ class UserController {
         @RequestHeader("X-User-Id") userId: Long,
         @Valid @RequestBody request: UpdateChatSettingsRequest,
     ): ResponseEntity<Void> {
-        // TODO: UserService.updateChatSettings(userId, request)
+        userService.updateChatSettings(userId, request)
         return ResponseEntity.noContent().build()
     }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -15,7 +15,7 @@ import { MeetingHeader } from './components/meeting-header';
 import { LanguageBar } from './components/language-bar';
 import { CaptionStream } from './components/caption-stream';
 import { ChatInputBar } from './components/chat-input-bar';
-import { useMeetingConnection, useMeetingSession } from './hooks';
+import { useEndMeeting, useMeetingConnection, useMeetingSession } from './hooks';
 
 export function MeetingScreen() {
   const router = useRouter();
@@ -23,15 +23,22 @@ export function MeetingScreen() {
   const { code, meetingId: meetingIdParam } = useLocalSearchParams<{ code?: string; meetingId?: string }>();
   const meetingId = meetingIdParam ? Number(meetingIdParam) : null;
   const { inMeeting, captions, elapsed, endMeeting } = useMeetingSession();
+  const endMutation = useEndMeeting();
   const startMeeting = useMeetingStore((s) => s.startMeeting);
+  const clearActiveMeeting = useMeetingStore((s) => s.clearActiveMeeting);
   const participants = useMeetingStore((s) => s.participants);
   const user = useAuthStore((s) => s.user);
 
   const [myLang, setMyLang] = useState<LangCode>('en');
+  // 종료 후 store가 비워지면 아래 자동시작 effect가 재실행돼 회의가 되살아나는 것을 막는 가드.
+  const startedRef = useRef(false);
 
-  // 실제 회의(meetingId 있음)로 들어온 경우에만 세션 시작. (회의 탭 직접 진입 = 가짜 회의 방지)
+  // 실제 회의(meetingId 있음)로 들어온 경우에만 세션 시작 (mount당 1회). 회의 탭 직접 진입 = 가짜 회의 방지.
   useEffect(() => {
-    if (meetingId !== null && !inMeeting) startMeeting(code ?? '');
+    if (meetingId !== null && !inMeeting && !startedRef.current) {
+      startedRef.current = true;
+      startMeeting(code ?? '');
+    }
   }, [meetingId, inMeeting, code, startMeeting]);
 
   // 회의 화면이 켜져 있는 동안만 STOMP 연결 (채팅 + presence + WebRTC 시그널링) & 음성통화
@@ -41,9 +48,20 @@ export function MeetingScreen() {
     send({ senderName: user?.name ?? '나', message: text, lang: toBackendLang(myLang) });
   };
 
-  const handleEnd = () => {
+  const handleEnd = async () => {
+    // 서버에 회의 종료 요청 (개설자만 성공, 그 외 403은 무시하고 로컬 정리).
+    if (meetingId !== null) {
+      try {
+        await endMutation.mutateAsync(meetingId);
+      } catch (e) {
+        console.warn('[meeting] 종료 실패(개설자 아님이거나 이미 종료)', e);
+      }
+    }
+    // 종료 시점에 스토어 진행중 회의 상태 해제 (홈/회의탭 즉시 정합).
+    clearActiveMeeting();
     endMeeting(captions);
-    router.back();
+    // 종료 후엔 회의화면을 벗어나 홈으로 (탭 화면이라 back()으론 안 벗어나짐).
+    router.replace('/(tabs)');
   };
 
   // presence가 오기 전에도 본인은 항상 보이도록 (서버 목록에 내 이름 있으면 중복 제거)

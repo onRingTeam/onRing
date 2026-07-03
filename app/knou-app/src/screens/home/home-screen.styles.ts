@@ -157,4 +157,39 @@ export const styles = StyleSheet.create({
     paddingVertical: Spacing.four,
     alignItems: 'center',
   },
+  confirmBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.five,
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 320,
+    borderRadius: 20,
+    padding: Spacing.four,
+    gap: Spacing.two,
+  },
+  confirmTitle: {
+    textAlign: 'center',
+  },
+  confirmBody: {
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  confirmRow: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    marginTop: Spacing.two,
+  },
+  confirmBtn: {
+    flex: 1,
+    borderRadius: 12,
+    paddingVertical: Spacing.three,
+    alignItems: 'center',
+  },
+  confirmBtnText: {
+    fontWeight: '600',
+  },
 });

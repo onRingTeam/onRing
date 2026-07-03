@@ -24,7 +24,9 @@ export function BottomNav() {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
-  const inMeeting = useMeetingStore((s) => s.inMeeting);
+  // 진행중 회의 판단은 Zustand 스토어 activeMeeting 단일 소스로 통일 (홈과 동일).
+  // 생성/참여 시 즉시 세팅, 종료 시 해제되어 아이콘 활성·이동이 정합된다.
+  const activeMeeting = useMeetingStore((s) => s.activeMeeting);
   const setShowCreateSheet = useUiStore((s) => s.setShowCreateSheet);
 
   const isActive = (tab: NavTab) => {
@@ -42,13 +44,19 @@ export function BottomNav() {
   };
 
   const handleMeeting = () => {
-    if (!inMeeting) {
+    if (!activeMeeting) {
+      // 진행중 회의 없음 → 홈으로 이동 후 회의 생성 바텀시트
       router.push('/(tabs)' as any);
       setShowCreateSheet(true);
     } else if (isMeetingActive) {
+      // 이미 회의 화면이면 홈으로 토글
       router.push('/(tabs)' as any);
     } else {
-      router.push('/(tabs)/meeting' as any);
+      // 진행중 회의로 이동
+      router.push({
+        pathname: '/(tabs)/meeting',
+        params: { meetingId: String(activeMeeting.meetingId), code: activeMeeting.meetingCode },
+      } as any);
     }
   };
 
@@ -79,7 +87,7 @@ export function BottomNav() {
 
       {/* 3. 회의 (마이크 — 항상 강조색, 회의 중엔 빨강) */}
       <TouchableOpacity style={styles.tab} onPress={handleMeeting} activeOpacity={0.7}>
-        <View style={[styles.iconBox, { backgroundColor: inMeeting ? colors.error : colors.primary }]}>
+        <View style={[styles.iconBox, { backgroundColor: activeMeeting ? colors.error : colors.primary }]}>
           <Feather name={ICON.meeting} size={24} color="#ffffff" />
         </View>
         <ThemedText style={[styles.label, { color: isMeetingActive ? colors.primary : colors.textSecondary }]}>

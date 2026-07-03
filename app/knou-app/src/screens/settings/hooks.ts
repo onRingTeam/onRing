@@ -1,0 +1,32 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+
+import type { BackendFontSize } from '@/types/settings';
+import type { BackendLang } from '@/types/meeting';
+import { fetchProfile, updateChatSettings, updateProfile } from './api';
+
+/** 내 프로필 + 채팅 설정 조회 쿼리. */
+export function useProfile() {
+  return useQuery({
+    queryKey: ['profile'],
+    queryFn: fetchProfile,
+  });
+}
+
+/** 프로필(회원명) 수정 뮤테이션. */
+export function useUpdateProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => updateProfile(name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['profile'] }),
+  });
+}
+
+/** 채팅 설정 수정 뮤테이션. */
+export function useUpdateChatSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (settings: { language: BackendLang; fontSize: BackendFontSize; vibration: boolean }) =>
+      updateChatSettings(settings),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['profile'] }),
+  });
+}
