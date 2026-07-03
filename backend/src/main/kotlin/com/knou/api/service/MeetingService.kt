@@ -2,12 +2,14 @@ package com.knou.api.service
 
 import com.knou.api.dto.common.MeetingStatus
 import com.knou.api.dto.meeting.CreateMeetingRequest
+import com.knou.api.dto.meeting.MeetingMessageResponse
 import com.knou.api.dto.meeting.MeetingRoomResponse
 import com.knou.api.entity.MeetingAttendanceEntity
 import com.knou.api.entity.MeetingEntity
 import com.knou.api.repository.MeetingAttendanceRepository
 import com.knou.api.repository.MeetingRepository
 import com.knou.api.repository.UserRepository
+import com.knou.api.websocket.MeetingChatBuffer
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -25,6 +27,7 @@ class MeetingService(
     private val meetingRepository: MeetingRepository,
     private val userRepository: UserRepository,
     private val attendanceRepository: MeetingAttendanceRepository,
+    private val chatBuffer: MeetingChatBuffer,
 ) {
 
     /**
@@ -117,5 +120,23 @@ class MeetingService(
             // TODO: 개설자(creator) 필드 도입 시 실제 판별.
             host = false,
         )
+    }
+
+    /**
+     * 진행중 회의의 채팅 메시지 조회 (시간순, 인메모리 버퍼 — 회의 종료 시 폐기).
+     * 웹소켓 재연결 시 놓친 메시지 복구용 — [after] 이후만, 생략 시 보관분 전체.
+     *
+     * @throws ResponseStatusException 404(회의 없음)
+     */
+    fun messages(meetingId: Long, after: LocalDateTime?): List<MeetingMessageResponse> {
+        if (!meetingRepository.existsById(meetingId)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "회의를 찾을 수 없습니다: $meetingId")
+        }
+        return chatBuffer.since(meetingId, after)
+    }
+
+    /** 회의 종료 시 채팅 버퍼 폐기 (인메모리 보관분은 회의와 함께 소멸). */
+    fun clearChat(meetingId: Long) {
+        chatBuffer.clear(meetingId)
     }
 }
