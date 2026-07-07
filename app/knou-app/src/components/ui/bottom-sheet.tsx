@@ -13,6 +13,7 @@ import Animated, {
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -29,6 +30,7 @@ const HIDE_EVENT = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide
 
 export function BottomSheet({ visible, onClose, children, style, ...props }: BottomSheetProps) {
   const theme = useTheme();
+  const insets = useSafeAreaInsets();
 
   // 키보드 높이를 단일 애니메이션 값으로 관리한다.
   // (KeyboardAvoidingView + OS 창 리사이즈가 서로 밀고 당기며 위치가 튀는 문제를 회피)
@@ -59,7 +61,13 @@ export function BottomSheet({ visible, onClose, children, style, ...props }: Bot
         <TouchableOpacity style={styles.backdropTouch} onPress={onClose} activeOpacity={1} />
         {/* 키보드가 올라오면 그 높이만큼 시트를 위로 밀어올림 */}
         <Animated.View
-          style={[styles.sheet, sheetStyle, { backgroundColor: theme.background }, style]}
+          style={[
+            styles.sheet,
+            sheetStyle,
+            // 제스처 내비게이션 바에 내용이 가려지지 않도록 시스템 인셋만큼 하단 여백 확보
+            { backgroundColor: theme.background, paddingBottom: Spacing.four + insets.bottom },
+            style,
+          ]}
           {...props}
         >
           <View style={styles.grabber} />
