@@ -47,6 +47,19 @@ export async function fetchMeetingDetail(meetingId: number): Promise<MeetingDeta
 }
 
 /**
+ * 회의록 선택 삭제. 내 참석 레코드의 use_yn 만 N 으로 바꾸는 참석자별 소프트 삭제.
+ * POST /api/meetings/delete
+ */
+export async function deleteMeetings(meetingIds: number[]): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/meetings/delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ meetingIds }),
+  });
+  if (!res.ok) throw new Error(`회의록 삭제 실패 (${res.status})`);
+}
+
+/**
  * 즐겨찾기 토글. (화면정의서 3-c, 3-d)
  * PATCH /api/meetings/{meetingId}/favorite
  */

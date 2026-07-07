@@ -5,6 +5,7 @@ import com.knou.api.dto.common.Language
 import com.knou.api.dto.common.MeetingStatus
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
+import jakarta.validation.constraints.NotEmpty
 import jakarta.validation.constraints.Size
 import java.time.LocalDateTime
 
@@ -160,6 +161,17 @@ data class MeetingMessageResponse(
 
     @field:Schema(description = "번역문 (조회자 언어 기준)", example = "Hello")
     val translated: String?,
+)
+
+// ===========================================================================
+// 회의록 삭제 — POST /api/meetings/delete  (회의록 화면 선택 삭제)
+// 참석자별 소프트 삭제: 내 참석 레코드의 use_yn 만 N 으로 바꾼다.
+// ===========================================================================
+@Schema(description = "회의록 삭제 요청 (내 참석 레코드 use_yn=N 처리)")
+data class DeleteMeetingsRequest(
+    @field:Schema(description = "삭제할 회의 ID 목록", example = "[10, 11]")
+    @field:NotEmpty
+    val meetingIds: List<Long>,
 )
 
 // ===========================================================================

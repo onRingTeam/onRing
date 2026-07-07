@@ -3,6 +3,7 @@ package com.knou.api.controller
 import com.knou.api.dto.common.ExportFormat
 import com.knou.api.dto.common.PageResponse
 import com.knou.api.dto.meeting.CreateMeetingRequest
+import com.knou.api.dto.meeting.DeleteMeetingsRequest
 import com.knou.api.dto.meeting.ExportRequest
 import com.knou.api.dto.meeting.JoinMeetingRequest
 import com.knou.api.dto.meeting.MeetingDetailResponse
@@ -127,6 +128,20 @@ class MeetingController(
         @PathVariable meetingId: Long,
     ): ResponseEntity<Void> {
         meetingService.toggleFavorite(userId, meetingId)
+        return ResponseEntity.noContent().build()
+    }
+
+    @Operation(
+        summary = "회의록 선택 삭제",
+        description = "선택한 회의들의 내 참석 레코드 use_yn 을 N 으로 바꿔 내 회의록 목록에서 숨긴다. " +
+            "참석자별 소프트 삭제라 다른 참석자에게는 영향이 없다. (회의록 화면 삭제 모드)",
+    )
+    @PostMapping("/delete")
+    fun deleteMeetings(
+        @RequestHeader("X-User-Id") userId: Long,
+        @Valid @RequestBody request: DeleteMeetingsRequest,
+    ): ResponseEntity<Void> {
+        meetingService.delete(userId, request.meetingIds)
         return ResponseEntity.noContent().build()
     }
 

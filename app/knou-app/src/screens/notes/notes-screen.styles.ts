@@ -43,6 +43,23 @@ export const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.one,
   },
+  deleteControls: {
+    marginLeft: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  deleteBtn: {
+    paddingHorizontal: Spacing.one,
+    paddingVertical: Spacing.one,
+  },
+  deleteText: {
+    fontWeight: '600',
+  },
+  checkboxBtn: {
+    alignSelf: 'center',
+    padding: Spacing.half,
+  },
   list: {
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.three,

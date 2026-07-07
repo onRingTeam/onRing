@@ -24,4 +24,7 @@ interface MeetingAttendanceRepository : JpaRepository<MeetingAttendanceEntity, L
 
     // 특정 회원의 즐겨찾기한 참석 목록
     fun findAllByUser_UserIdAndFavoriteYn(userId: Long, favoriteYn: String): List<MeetingAttendanceEntity>
+
+    // 특정 회원의 여러 회의 참석 레코드 (회의록 일괄 삭제 — use_yn 갱신용)
+    fun findAllByUser_UserIdAndMeeting_MeetingIdIn(userId: Long, meetingIds: List<Long>): List<MeetingAttendanceEntity>
 }

@@ -34,6 +34,9 @@ class MeetingAttendanceEntity(
     @Column(name = "favorite_yn", nullable = false, length = 1)
     var favoriteYn: String = "N",
 
+    @Column(name = "use_yn", nullable = false, length = 1)
+    var useYn: String = "Y",
+
     @Column(name = "action_item", columnDefinition = "TEXT")
     var actionItem: String? = null,
 

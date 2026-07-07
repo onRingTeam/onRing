@@ -156,6 +156,8 @@ class MeetingService(
             .findAllByUser_UserIdOrderByMeeting_MeetingDateDesc(userId)
             // 진행중 회의는 최근 회의에서 제외 (종료된 회의만 노출)
             .filter { it.meeting.status == MeetingStatus.ENDED.name }
+            // 사용자가 삭제(use_yn=N)한 회의록은 제외
+            .filter { it.useYn == "Y" }
             .take(limit)
             .map { toListItem(it) }
     }
@@ -178,6 +180,8 @@ class MeetingService(
             .asSequence()
             // 회의록 목록에는 종료(ENDED)된 회의만 노출 (진행중 회의는 제외)
             .filter { it.meeting.status == MeetingStatus.ENDED.name }
+            // 사용자가 삭제(use_yn=N)한 회의록은 제외
+            .filter { it.useYn == "Y" }
             .filter { !favoriteOnly || it.favoriteYn == "Y" }
             .filter { att ->
                 kw == null || run {
@@ -253,6 +257,17 @@ class MeetingService(
         val attendance = attendanceRepository.findByMeeting_MeetingIdAndUser_UserId(meetingId, userId)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "참석 기록을 찾을 수 없습니다.")
         attendance.favoriteYn = if (attendance.favoriteYn == "Y") "N" else "Y"
+    }
+
+    /**
+     * 회의록 선택 삭제(소프트). 내 참석 레코드의 useYn 을 N 으로 바꿔 내 목록에서만 숨긴다.
+     * 회의 자체와 다른 참석자의 회의록에는 영향이 없다.
+     */
+    @Transactional
+    fun delete(userId: Long, meetingIds: List<Long>) {
+        attendanceRepository
+            .findAllByUser_UserIdAndMeeting_MeetingIdIn(userId, meetingIds)
+            .forEach { it.useYn = "N" }
     }
 
     /**

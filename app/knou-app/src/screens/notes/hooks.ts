@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { MeetingListItem } from '@/types/meeting';
-import { fetchMeetingDetail, fetchMeetings, toggleFavorite } from './api';
+import { deleteMeetings, fetchMeetingDetail, fetchMeetings, toggleFavorite } from './api';
 
 export interface UseMeetingsOptions {
   keyword: string;
@@ -47,6 +47,18 @@ export function useToggleFavorite() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (meetingId: number) => toggleFavorite(meetingId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['meetings'] });
+      qc.invalidateQueries({ queryKey: ['recent-meetings'] });
+    },
+  });
+}
+
+/** 회의록 선택 삭제 뮤테이션 (내 참석 레코드 use_yn=N, 성공 시 목록 캐시 무효화). */
+export function useDeleteMeetings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (meetingIds: number[]) => deleteMeetings(meetingIds),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['meetings'] });
       qc.invalidateQueries({ queryKey: ['recent-meetings'] });
