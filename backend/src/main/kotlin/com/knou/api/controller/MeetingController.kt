@@ -11,12 +11,14 @@ import com.knou.api.dto.meeting.MeetingListItemResponse
 import com.knou.api.dto.meeting.MeetingMessageResponse
 import com.knou.api.dto.meeting.MeetingRoomResponse
 import com.knou.api.service.MeetingService
+import com.knou.api.websocket.MeetingStatusEvent
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
 import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.ResponseEntity
+import org.springframework.messaging.simp.SimpMessagingTemplate
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -39,6 +41,7 @@ import java.time.LocalDateTime
 @RequestMapping("/api/meetings")
 class MeetingController(
     private val meetingService: MeetingService,
+    private val messagingTemplate: SimpMessagingTemplate,
 ) {
 
     @Operation(summary = "신규 회의 생성", description = "회의명·내 언어로 회의를 생성한다. 회의 코드는 '날짜+회의명 첫글자+UUID'로 자동 생성. (화면 2-b-i-1)")
@@ -153,6 +156,11 @@ class MeetingController(
     ): ResponseEntity<Void> {
         meetingService.end(userId, meetingId)
         meetingService.clearChat(meetingId)
+        // 참여자 전원에게 종료 알림 — 수신 측은 회의 화면을 정리하고 요약 화면으로 이동
+        messagingTemplate.convertAndSend(
+            "/topic/meetings/$meetingId/status",
+            MeetingStatusEvent(type = "ENDED", meetingId = meetingId, occurredAt = LocalDateTime.now()),
+        )
         return ResponseEntity.noContent().build()
     }
 

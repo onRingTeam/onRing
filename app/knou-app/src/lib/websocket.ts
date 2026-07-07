@@ -3,6 +3,7 @@ import { Client, type StompSubscription } from '@stomp/stompjs';
 import type {
   ChatMessageRequest,
   ChatMessageResponse,
+  MeetingStatusEvent,
   ParticipantListResponse,
   SignalMessage,
 } from '@/types/meeting';
@@ -11,10 +12,11 @@ import { WS_URL } from '@/lib/config';
 /**
  * 회의 실시간 통신용 STOMP over WebSocket 클라이언트.
  *
- * 연결 1개로 세 토픽을 구독한다 (STOMP 멀티플렉싱):
+ * 연결 1개로 네 토픽을 구독한다 (STOMP 멀티플렉싱):
  * - 채팅:     발행 `/app/meetings/{id}/send`               → 구독 `/topic/meetings/{id}`
  * - presence: 발행 `/app/meetings/{id}/participants/join`   → 구독 `/topic/meetings/{id}/participants`
  * - 시그널링: 발행 `/app/meetings/{id}/signal`              → 구독 `/topic/meetings/{id}/signal` (WebRTC Mesh)
+ * - 상태:     (서버 발행 전용)                               → 구독 `/topic/meetings/{id}/status` (회의 종료 알림)
  *
  * CONNECT 시 JWT 검증 (운영). dev/local 은 익명 허용.
  */
@@ -26,6 +28,8 @@ export interface MeetingSocketOptions {
   onParticipants?: (participants: string[]) => void;
   /** WebRTC 시그널 수신 (Mesh) */
   onSignal?: (msg: SignalMessage) => void;
+  /** 회의 상태 변경 수신 — 개설자가 종료하면 type=ENDED 로 도착 */
+  onStatus?: (event: MeetingStatusEvent) => void;
   /** 연결 직후 이 이름으로 입장(presence) 자동 발행 */
   joinName?: string;
   onConnect?: () => void;
@@ -41,6 +45,7 @@ export class MeetingSocket {
   private chatSub: StompSubscription | null = null;
   private presenceSub: StompSubscription | null = null;
   private signalSub: StompSubscription | null = null;
+  private statusSub: StompSubscription | null = null;
   private meetingId: number | null = null;
   /** 연결 끊김 동안 보낸 채팅 — 재연결 시 순서대로 발행. */
   private pendingSends: ChatMessageRequest[] = [];
@@ -80,7 +85,13 @@ export class MeetingSocket {
           if (msg) options.onSignal?.(msg);
         });
 
-        // 4) 입장 발행 (presence 등록)
+        // 4) 회의 상태 토픽 (종료 알림)
+        this.statusSub = client.subscribe(`/topic/meetings/${meetingId}/status`, (frame) => {
+          const event = parse<MeetingStatusEvent>(frame.body);
+          if (event) options.onStatus?.(event);
+        });
+
+        // 5) 입장 발행 (presence 등록)
         if (options.joinName) {
           client.publish({
             destination: `/app/meetings/${meetingId}/participants/join`,
@@ -88,7 +99,7 @@ export class MeetingSocket {
           });
         }
 
-        // 5) 끊김 동안 쌓인 발신 채팅 재전송
+        // 6) 끊김 동안 쌓인 발신 채팅 재전송
         const pending = this.pendingSends;
         this.pendingSends = [];
         for (const payload of pending) this.send(payload);
@@ -139,9 +150,11 @@ export class MeetingSocket {
     this.chatSub?.unsubscribe();
     this.presenceSub?.unsubscribe();
     this.signalSub?.unsubscribe();
+    this.statusSub?.unsubscribe();
     this.chatSub = null;
     this.presenceSub = null;
     this.signalSub = null;
+    this.statusSub = null;
     void this.client?.deactivate();
     this.client = null;
     this.meetingId = null;

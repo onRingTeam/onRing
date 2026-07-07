@@ -34,3 +34,14 @@ data class MessageResponse(
     // TODO Phase 4-2: 수신자 언어로 번역된 결과(translatedText, targetLang) 추가
     // TODO Phase 6: messageId 추가(영속화 후)
 )
+
+/**
+ * 회의 상태 변경 브로드캐스트 (`/topic/meetings/{id}/status`).
+ * 개설자가 회의를 종료하면 발행 — 수신한 참여자는 회의 화면을 정리하고 요약 화면으로 이동한다.
+ */
+data class MeetingStatusEvent(
+    /** 상태 종류. 현재는 ENDED 만 사용. */
+    val type: String,
+    val meetingId: Long,
+    val occurredAt: LocalDateTime,
+)
