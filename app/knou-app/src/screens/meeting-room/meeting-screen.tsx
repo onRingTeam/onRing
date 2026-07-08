@@ -10,7 +10,8 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuthStore, useMeetingStore } from '@/store';
 import type { LangCode } from '@/types/meeting';
-import { toBackendLang } from '@/types/meeting';
+import { fromBackendLang, toBackendLang } from '@/types/meeting';
+import { useProfile } from '@/screens/settings/hooks';
 import { MeetingHeader } from './components/meeting-header';
 import { LanguageBar } from './components/language-bar';
 import { CaptionStream } from './components/caption-stream';
@@ -31,7 +32,11 @@ export function MeetingScreen() {
   const user = useAuthStore((s) => s.user);
   const backendUserId = useAuthStore((s) => s.backendUserId);
 
-  const [myLang, setMyLang] = useState<LangCode>('en');
+  // 내 발화 언어 — 기본값은 유저 프로필 언어, 언어 바에서 회의 중 변경 가능.
+  // 선택값이 STT 인식·전송 lang·수신 번역 타깃의 단일 소스.
+  const { data: profile } = useProfile();
+  const [selectedLang, setSelectedLang] = useState<LangCode | null>(null);
+  const myLang: LangCode = selectedLang ?? (profile ? fromBackendLang(profile.language) : 'ko');
   // 종료 후 store가 비워지면 아래 자동시작 effect가 재실행돼 회의가 되살아나는 것을 막는 가드.
   const startedRef = useRef(false);
   const streamRef = useRef<ScrollView>(null);
@@ -67,6 +72,7 @@ export function MeetingScreen() {
     meetingId,
     backendUserId ?? 0,
     user?.name ?? '나',
+    myLang,
     finishLocally,
   );
 
@@ -115,7 +121,7 @@ export function MeetingScreen() {
         onEnd={activeMeeting?.host ? handleEnd : undefined}
       />
 
-      <LanguageBar selected={myLang} onSelect={setMyLang} />
+      <LanguageBar selected={myLang} onSelect={setSelectedLang} />
 
       <ScrollView
         ref={streamRef}
