@@ -1,6 +1,6 @@
 // 1. Import
 import { useState } from 'react';
-import { ScrollView, View, TouchableOpacity, TextInput } from 'react-native';
+import { Modal, ScrollView, View, TouchableOpacity, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather, Ionicons } from '@expo/vector-icons';
@@ -21,11 +21,12 @@ export function NotesScreen() {
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
 
-  // 3. useState (검색어 / 필터 탭 / 삭제 모드)
+  // 3. useState (검색어 / 필터 탭 / 삭제 모드 / 삭제 확인 모달)
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<FilterTab>('all');
   const [deleteMode, setDeleteMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // 4. 서버 상태 — 회의록 목록 + 즐겨찾기 토글 + 선택 삭제
   const { data: meetings = [], isLoading } = useMeetings({
@@ -62,15 +63,18 @@ export function NotesScreen() {
   };
 
   // 선택한 회의록 삭제 — 내 참석 레코드 use_yn=N 처리 후 목록 갱신
-  const handleDeleteSelected = () => {
+  const handleConfirmDelete = () => {
     if (selectedIds.size === 0 || deleteMutation.isPending) return;
     deleteMutation.mutate([...selectedIds], {
       onSuccess: () => {
+        setShowDeleteConfirm(false);
         setDeleteMode(false);
         setSelectedIds(new Set());
       },
     });
   };
+
+  const selectedCount = selectedIds.size;
 
   // 6. Return
   return (
@@ -123,43 +127,40 @@ export function NotesScreen() {
                 </TouchableOpacity>
               );
             })}
-            <View style={styles.deleteControls}>
-              {deleteMode && (
-                <TouchableOpacity
-                  onPress={handleToggleDeleteMode}
-                  activeOpacity={0.7}
-                  style={styles.deleteBtn}
-                  accessibilityRole="button"
-                  accessibilityLabel="삭제 취소"
-                >
-                  <ThemedText type="small" themeColor="textSecondary">
-                    취소
-                  </ThemedText>
-                </TouchableOpacity>
-              )}
-              <TouchableOpacity
-                onPress={deleteMode ? handleDeleteSelected : handleToggleDeleteMode}
-                activeOpacity={0.7}
-                style={styles.deleteBtn}
-                disabled={deleteMode && (selectedIds.size === 0 || deleteMutation.isPending)}
-                accessibilityRole="button"
-                accessibilityLabel={deleteMode ? '선택한 회의록 삭제' : '삭제 모드'}
-                accessibilityState={{ disabled: deleteMode && selectedIds.size === 0 }}
+            {/* 삭제 모드 토글 — 아이콘 칩 (활성 시 강조) */}
+            <TouchableOpacity
+              onPress={handleToggleDeleteMode}
+              activeOpacity={0.7}
+              style={[
+                styles.deleteToggle,
+                deleteMode
+                  ? { backgroundColor: colors.error, borderColor: colors.error }
+                  : { backgroundColor: colors.backgroundElement, borderColor: colors.border },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel={deleteMode ? '삭제 모드 종료' : '회의록 삭제'}
+              accessibilityState={{ selected: deleteMode }}
+            >
+              <Ionicons
+                name={deleteMode ? 'close' : 'trash-outline'}
+                size={15}
+                color={deleteMode ? '#ffffff' : colors.textSecondary}
+              />
+              <ThemedText
+                type="small"
+                style={{ color: deleteMode ? '#ffffff' : colors.textSecondary, fontWeight: '600' }}
               >
-                <ThemedText type="small" style={[styles.deleteText, { color: colors.error }]}>
-                  {deleteMode
-                    ? deleteMutation.isPending
-                      ? '삭제 중…'
-                      : `삭제${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`
-                    : '삭제'}
-                </ThemedText>
-              </TouchableOpacity>
-            </View>
+                {deleteMode ? '완료' : '삭제'}
+              </ThemedText>
+            </TouchableOpacity>
           </View>
         </View>
 
         {/* 목록 */}
-        <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={[styles.list, deleteMode && styles.listDeleteMode]}
+          showsVerticalScrollIndicator={false}
+        >
           {isLoading ? (
             <ThemedText type="small" themeColor="textSecondary" style={styles.stateText}>
               로드 중...
@@ -169,107 +170,201 @@ export function NotesScreen() {
               {query || filter === 'starred' ? '검색 결과가 없습니다.' : '회의 기록이 없습니다.'}
             </ThemedText>
           ) : (
-            meetings.map((m) => (
-              <View
-                key={m.meetingId}
-                style={[styles.card, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}
-              >
-                <View style={styles.cardTop}>
-                  {deleteMode && (
-                    <TouchableOpacity
-                      onPress={() => handleToggleSelect(m.meetingId)}
-                      activeOpacity={0.7}
-                      style={styles.checkboxBtn}
-                      accessibilityRole="checkbox"
-                      accessibilityLabel={`${m.title} 삭제 선택`}
-                      accessibilityState={{ checked: selectedIds.has(m.meetingId) }}
-                    >
-                      <Ionicons
-                        name={selectedIds.has(m.meetingId) ? 'checkbox' : 'square-outline'}
-                        size={20}
-                        color={selectedIds.has(m.meetingId) ? colors.error : colors.textSecondary}
-                      />
-                    </TouchableOpacity>
-                  )}
-                  <View style={[styles.cardIcon, { backgroundColor: colors.backgroundSelected }]}>
-                    <Feather name="file-text" size={16} color={colors.primary} />
-                  </View>
-                  <TouchableOpacity
-                    style={styles.cardBody}
-                    onPress={() => (deleteMode ? handleToggleSelect(m.meetingId) : handleDetail(m))}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                    accessibilityLabel={deleteMode ? `${m.title} 삭제 선택` : `${m.title} 상세보기`}
-                  >
-                    <ThemedText type="smallBold" numberOfLines={1}>
-                      {m.title}
-                    </ThemedText>
-                    <View style={styles.metaRow}>
-                      <ThemedText type="small" themeColor="textSecondary" style={styles.metaText}>
-                        {formatMeetingDate(m.meetingDate)}
-                      </ThemedText>
-                      <View style={[styles.metaDot, { backgroundColor: colors.border }]} />
-                      <ThemedText type="small" themeColor="textSecondary" style={styles.metaText}>
-                        {formatDuration(m.durationSec)}
-                      </ThemedText>
-                      <View style={[styles.metaDot, { backgroundColor: colors.border }]} />
-                      <Feather name="users" size={10} color={colors.textSecondary} />
-                      <ThemedText type="small" themeColor="textSecondary" style={styles.metaText}>
-                        {m.participantNames.length}명
-                      </ThemedText>
+            meetings.map((m) => {
+              const selected = selectedIds.has(m.meetingId);
+              return (
+                <View
+                  key={m.meetingId}
+                  style={[
+                    styles.card,
+                    { backgroundColor: colors.backgroundElement, borderColor: colors.border },
+                    deleteMode && selected && { borderColor: colors.error, backgroundColor: colors.backgroundSelected },
+                  ]}
+                >
+                  <View style={styles.cardTop}>
+                    {deleteMode && (
+                      <TouchableOpacity
+                        onPress={() => handleToggleSelect(m.meetingId)}
+                        activeOpacity={0.7}
+                        style={styles.checkboxBtn}
+                        accessibilityRole="checkbox"
+                        accessibilityLabel={`${m.title} 삭제 선택`}
+                        accessibilityState={{ checked: selected }}
+                      >
+                        <Ionicons
+                          name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+                          size={22}
+                          color={selected ? colors.error : colors.textSecondary}
+                        />
+                      </TouchableOpacity>
+                    )}
+                    <View style={[styles.cardIcon, { backgroundColor: colors.backgroundSelected }]}>
+                      <Feather name="file-text" size={16} color={colors.primary} />
                     </View>
-                    {m.languages.length > 0 && (
-                      <View style={styles.langRow}>
-                        {m.languages.map((l) => (
-                          <View key={l} style={[styles.langBadge, { backgroundColor: colors.backgroundSelected }]}>
-                            <ThemedText type="small" style={[styles.langBadgeText, { color: colors.primary }]}>
-                              {LANG_BADGE[l]}
-                            </ThemedText>
-                          </View>
-                        ))}
-                      </View>
-                    )}
-                    {!!m.summary && (
-                      <ThemedText type="small" themeColor="textSecondary" numberOfLines={2} style={styles.summary}>
-                        {m.summary}
+                    <TouchableOpacity
+                      style={styles.cardBody}
+                      onPress={() => (deleteMode ? handleToggleSelect(m.meetingId) : handleDetail(m))}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel={deleteMode ? `${m.title} 삭제 선택` : `${m.title} 상세보기`}
+                    >
+                      <ThemedText type="smallBold" numberOfLines={1}>
+                        {m.title}
                       </ThemedText>
+                      <View style={styles.metaRow}>
+                        <ThemedText type="small" themeColor="textSecondary" style={styles.metaText}>
+                          {formatMeetingDate(m.meetingDate)}
+                        </ThemedText>
+                        <View style={[styles.metaDot, { backgroundColor: colors.border }]} />
+                        <ThemedText type="small" themeColor="textSecondary" style={styles.metaText}>
+                          {formatDuration(m.durationSec)}
+                        </ThemedText>
+                        <View style={[styles.metaDot, { backgroundColor: colors.border }]} />
+                        <Feather name="users" size={10} color={colors.textSecondary} />
+                        <ThemedText type="small" themeColor="textSecondary" style={styles.metaText}>
+                          {m.participantNames.length}명
+                        </ThemedText>
+                      </View>
+                      {m.languages.length > 0 && (
+                        <View style={styles.langRow}>
+                          {m.languages.map((l) => (
+                            <View key={l} style={[styles.langBadge, { backgroundColor: colors.backgroundSelected }]}>
+                              <ThemedText type="small" style={[styles.langBadgeText, { color: colors.primary }]}>
+                                {LANG_BADGE[l]}
+                              </ThemedText>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                      {!!m.summary && (
+                        <ThemedText type="small" themeColor="textSecondary" numberOfLines={2} style={styles.summary}>
+                          {m.summary}
+                        </ThemedText>
+                      )}
+                    </TouchableOpacity>
+                    {!deleteMode && (
+                      <TouchableOpacity
+                        onPress={() => handleToggleStar(m)}
+                        activeOpacity={0.7}
+                        style={styles.starBtn}
+                        accessibilityRole="button"
+                        accessibilityLabel={m.favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
+                        accessibilityState={{ selected: m.favorite }}
+                      >
+                        <Ionicons
+                          name={m.favorite ? 'star' : 'star-outline'}
+                          size={16}
+                          color={m.favorite ? '#F5B301' : colors.textSecondary}
+                        />
+                      </TouchableOpacity>
                     )}
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    onPress={() => handleToggleStar(m)}
-                    activeOpacity={0.7}
-                    style={styles.starBtn}
-                    accessibilityRole="button"
-                    accessibilityLabel={m.favorite ? '즐겨찾기 해제' : '즐겨찾기 추가'}
-                    accessibilityState={{ selected: m.favorite }}
-                  >
-                    <Ionicons
-                      name={m.favorite ? 'star' : 'star-outline'}
-                      size={16}
-                      color={m.favorite ? '#F5B301' : colors.textSecondary}
-                    />
-                  </TouchableOpacity>
-                </View>
+                  </View>
 
-                <View style={[styles.cardActions, { borderTopColor: colors.border }]}>
-                  <TouchableOpacity
-                    style={[styles.actionBtn, { backgroundColor: colors.primary }]}
-                    onPress={() => handleDetail(m)}
-                    activeOpacity={0.8}
-                    accessibilityRole="button"
-                    accessibilityLabel="상세보기"
-                  >
-                    <Feather name="file-text" size={12} color="#ffffff" />
-                    <ThemedText type="small" style={styles.actionText}>
-                      상세보기
-                    </ThemedText>
-                  </TouchableOpacity>
+                  {!deleteMode && (
+                    <View style={[styles.cardActions, { borderTopColor: colors.border }]}>
+                      <TouchableOpacity
+                        style={[styles.actionBtn, { backgroundColor: colors.primary }]}
+                        onPress={() => handleDetail(m)}
+                        activeOpacity={0.8}
+                        accessibilityRole="button"
+                        accessibilityLabel="상세보기"
+                      >
+                        <Feather name="file-text" size={12} color="#ffffff" />
+                        <ThemedText type="small" style={styles.actionText}>
+                          상세보기
+                        </ThemedText>
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
-              </View>
-            ))
+              );
+            })
           )}
         </ScrollView>
       </SafeAreaView>
+
+      {/* 삭제 모드 하단 액션 바 (선택 개수 + 삭제 버튼) */}
+      {deleteMode && (
+        <SafeAreaView edges={['bottom']} style={styles.deleteBarWrap} pointerEvents="box-none">
+          <View style={[styles.deleteBar, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.deleteBarCount}>
+              {selectedCount > 0 ? `${selectedCount}개 선택됨` : '삭제할 회의록을 선택하세요'}
+            </ThemedText>
+            <TouchableOpacity
+              onPress={() => setShowDeleteConfirm(true)}
+              activeOpacity={0.85}
+              disabled={selectedCount === 0}
+              style={[
+                styles.deleteBarBtn,
+                { backgroundColor: selectedCount === 0 ? colors.backgroundSelected : colors.error },
+              ]}
+              accessibilityRole="button"
+              accessibilityLabel="선택한 회의록 삭제"
+              accessibilityState={{ disabled: selectedCount === 0 }}
+            >
+              <Ionicons
+                name="trash-outline"
+                size={15}
+                color={selectedCount === 0 ? colors.textSecondary : '#ffffff'}
+              />
+              <ThemedText
+                type="small"
+                style={[styles.deleteBarBtnText, { color: selectedCount === 0 ? colors.textSecondary : '#ffffff' }]}
+              >
+                삭제{selectedCount > 0 ? ` (${selectedCount})` : ''}
+              </ThemedText>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
+      )}
+
+      {/* 삭제 확인 모달 */}
+      <Modal
+        visible={showDeleteConfirm}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowDeleteConfirm(false)}
+      >
+        <View style={styles.confirmBackdrop}>
+          <View style={[styles.confirmCard, { backgroundColor: colors.backgroundElement }]}>
+            <View style={[styles.confirmIcon, { backgroundColor: colors.backgroundSelected }]}>
+              <Ionicons name="trash-outline" size={22} color={colors.error} />
+            </View>
+            <ThemedText type="smallBold" style={styles.confirmTitle}>
+              회의록 {selectedCount}개를 삭제할까요?
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary" style={styles.confirmBody}>
+              내 목록에서만 숨겨지며 다른 참석자에게는 그대로 남아요. 삭제한 회의록은 최근 회의에서도 보이지 않습니다.
+            </ThemedText>
+            <View style={styles.confirmRow}>
+              <TouchableOpacity
+                style={[styles.confirmBtn, { backgroundColor: colors.backgroundSelected }]}
+                onPress={() => setShowDeleteConfirm(false)}
+                activeOpacity={0.8}
+                disabled={deleteMutation.isPending}
+                accessibilityRole="button"
+                accessibilityLabel="취소"
+              >
+                <ThemedText type="small" themeColor="textSecondary" style={styles.confirmBtnText}>
+                  취소
+                </ThemedText>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.confirmBtn, { backgroundColor: colors.error }]}
+                onPress={handleConfirmDelete}
+                activeOpacity={0.8}
+                disabled={deleteMutation.isPending}
+                accessibilityRole="button"
+                accessibilityLabel="삭제"
+              >
+                <ThemedText type="small" style={[styles.confirmBtnText, { color: '#ffffff' }]}>
+                  {deleteMutation.isPending ? '삭제 중…' : '삭제'}
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }

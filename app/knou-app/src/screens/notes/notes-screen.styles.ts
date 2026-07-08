@@ -43,18 +43,15 @@ export const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.one,
   },
-  deleteControls: {
+  deleteToggle: {
     marginLeft: 'auto',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
-  },
-  deleteBtn: {
-    paddingHorizontal: Spacing.one,
+    gap: Spacing.one,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.one,
-  },
-  deleteText: {
-    fontWeight: '600',
   },
   checkboxBtn: {
     alignSelf: 'center',
@@ -65,6 +62,10 @@ export const styles = StyleSheet.create({
     paddingTop: Spacing.three,
     paddingBottom: BottomTabInset + Spacing.four,
     gap: Spacing.two,
+  },
+  // 삭제 모드에선 하단 액션 바에 마지막 카드가 가리지 않도록 여백 추가
+  listDeleteMode: {
+    paddingBottom: BottomTabInset + Spacing.six,
   },
   stateText: {
     textAlign: 'center',
@@ -147,5 +148,94 @@ export const styles = StyleSheet.create({
   actionText: {
     color: '#ffffff',
     fontWeight: '600',
+  },
+
+  // 삭제 모드 하단 액션 바
+  deleteBarWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: BottomTabInset,
+    paddingHorizontal: Spacing.four,
+    paddingBottom: Spacing.two,
+  },
+  deleteBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+    borderRadius: 18,
+    borderWidth: 1,
+    paddingLeft: Spacing.four,
+    paddingRight: Spacing.two,
+    paddingVertical: Spacing.two,
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
+  deleteBarCount: {
+    flex: 1,
+  },
+  deleteBarBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    borderRadius: 12,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.two,
+  },
+  deleteBarBtnText: {
+    fontWeight: '700',
+  },
+
+  // 삭제 확인 모달
+  confirmBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.four,
+  },
+  confirmCard: {
+    width: '100%',
+    maxWidth: 340,
+    borderRadius: 24,
+    padding: Spacing.four,
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  confirmIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.one,
+  },
+  confirmTitle: {
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  confirmBody: {
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  confirmRow: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    marginTop: Spacing.two,
+    alignSelf: 'stretch',
+  },
+  confirmBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 14,
+    paddingVertical: Spacing.three,
+  },
+  confirmBtnText: {
+    fontWeight: '700',
   },
 });
