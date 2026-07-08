@@ -153,6 +153,21 @@ export const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
   },
+  langRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.one,
+    marginTop: Spacing.one,
+  },
+  langBadge: {
+    borderRadius: 6,
+    paddingHorizontal: Spacing.one,
+    paddingVertical: 1,
+  },
+  langBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
   emptyState: {
     paddingVertical: Spacing.four,
     alignItems: 'center',

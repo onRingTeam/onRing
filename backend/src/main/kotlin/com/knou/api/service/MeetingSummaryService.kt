@@ -11,9 +11,8 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.server.ResponseStatusException
 
-/** LLM 프롬프트에 넘길 회의 맥락 (회의명 + 참석자). */
+/** LLM 프롬프트에 넘길 회의 맥락 (참석자). 회의 제목은 요약에서 제외하므로 넘기지 않는다. */
 data class MeetingContext(
-    val title: String,
     val attendees: List<AttendeeInfo>,
 )
 
@@ -40,8 +39,9 @@ class MeetingSummaryService(
      */
     @Transactional
     fun recordSpeechCounts(meetingId: Long, messages: List<MeetingMessageResponse>): MeetingContext {
-        val meeting = meetingRepository.findById(meetingId).orElseThrow {
-            ResponseStatusException(HttpStatus.NOT_FOUND, "회의를 찾을 수 없습니다: $meetingId")
+        // 존재 확인 (회의 제목은 요약 프롬프트에서 제외 — 대화 내용만으로 요약)
+        if (!meetingRepository.existsById(meetingId)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "회의를 찾을 수 없습니다: $meetingId")
         }
         val attendances = attendanceRepository.findAllByMeeting_MeetingId(meetingId)
         val byUserId = attendances.associateBy { it.user.userId }
@@ -57,7 +57,7 @@ class MeetingSummaryService(
         }
 
         val attendees = attendances.map { AttendeeInfo(it.user.userId!!, it.user.name) }
-        return MeetingContext(title = meeting.title, attendees = attendees)
+        return MeetingContext(attendees = attendees)
     }
 
     /**
