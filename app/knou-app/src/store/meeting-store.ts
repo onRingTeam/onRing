@@ -21,6 +21,8 @@ interface MeetingState {
   clearActiveMeeting: () => void;
   startMeeting: (meetingId: string) => void;
   addCaption: (caption: CaptionItem) => void;
+  /** 자막의 번역 결과를 뒤늦게 채움 (온디바이스 번역 완료 시점) */
+  setCaptionTranslation: (id: string, translation: string) => void;
   setParticipants: (participants: string[]) => void;
   clearMeeting: () => void;
 }
@@ -42,6 +44,10 @@ export const useMeetingStore = create<MeetingState>((set) => ({
       if (state.captions.some((c) => c.id === caption.id)) return state;
       return { captions: [...state.captions, caption].sort((a, b) => a.timestamp - b.timestamp) };
     }),
+  setCaptionTranslation: (id, translation) =>
+    set((state) => ({
+      captions: state.captions.map((c) => (c.id === id ? { ...c, translation } : c)),
+    })),
   setParticipants: (participants) => set({ participants }),
   clearMeeting: () =>
     set({ inMeeting: false, currentMeetingId: undefined, captions: [], participants: [] }),

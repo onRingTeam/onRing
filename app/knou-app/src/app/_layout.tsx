@@ -7,6 +7,7 @@ import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { AppStatusBar } from '@/components/layout/app-status-bar';
 import { useAuthStore } from '@/store';
 import { bootstrapAuth } from '@/lib/auth';
+import { prefetchTranslationModels } from '@/lib/translate';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,6 +36,8 @@ function useAuthGate() {
   // 앱 시작 시 1회 세션 복구.
   useEffect(() => {
     bootstrapAuth();
+    // 기본 4개 언어(ko·en·ja·zh) 번역 모델 프리페치 — 백그라운드, 실패해도 앱 동작 무관
+    void prefetchTranslationModels();
   }, []);
 
   useEffect(() => {

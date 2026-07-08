@@ -2,16 +2,16 @@ import { useCallback, useEffect, useRef } from 'react';
 import { PermissionsAndroid, Platform } from 'react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-import type { CaptionItem, ChatMessageRequest, ChatMessageResponse } from '@/types/meeting';
+import type { CaptionItem, ChatMessageRequest, ChatMessageResponse, LangCode } from '@/types/meeting';
 import { fromBackendLang, toBackendLang } from '@/types/meeting';
 import { useElapsed } from '@/hooks/use-elapsed';
-import { useMeetingStore, useSettingsStore } from '@/store';
+import { useMeetingStore } from '@/store';
 import { MeetingSocket } from '@/lib/websocket';
 import { MeshVoiceCall } from '@/lib/webrtc/mesh-voice-call';
 import { LiveStt } from '@/lib/stt/live-stt';
 import { speakMessage, stopSpeaking } from '@/lib/tts';
+import { translate } from '@/lib/translate';
 import { fetchActiveMeetingId, endMeeting as endMeetingApi, fetchMessages } from './api';
-
 
 /**
  * 음성통화 권한 요청 (iOS는 getUserMedia 시 네이티브 팝업 자동).
@@ -58,12 +58,14 @@ export function useMeetingConnection(
   meetingId: number | null,
   senderId: number,
   senderName: string,
+  /** 내 발화 언어 (회의 화면 언어 바 선택) — STT 인식·전송 lang·수신 번역 타깃의 단일 소스 */
+  myLanguage: LangCode,
   /** 개설자가 회의를 종료했을 때(STOMP status 토픽 ENDED) 호출 — 화면 정리·이동용 */
   onMeetingEnded?: () => void,
 ) {
   const addCaption = useMeetingStore((s) => s.addCaption);
+  const setCaptionTranslation = useMeetingStore((s) => s.setCaptionTranslation);
   const setParticipants = useMeetingStore((s) => s.setParticipants);
-  const myLanguage = useSettingsStore((s) => s.myLanguage);
   const socketRef = useRef<MeetingSocket | null>(null);
   const meshRef = useRef<MeshVoiceCall | null>(null);
   const sttRef = useRef<LiveStt | null>(null);
@@ -95,9 +97,24 @@ export function useMeetingConnection(
       joinName: senderName,
       onMessage: (msg) => {
         lastSentAtRef.current = msg.sentAt;
-        addCaption(toCaption(msg));
+        const caption = toCaption(msg);
+        addCaption(caption);
+
         // 타이핑 채팅(CHAT)만 TTS 로 읽어준다 — STT 발화는 WebRTC 음성으로 이미 들렸고, 본인 메시지 제외
-        if (msg.source !== 'STT' && msg.senderName !== senderName) {
+        const shouldSpeak = msg.source !== 'STT' && msg.senderName !== senderName;
+        // 외국어 메시지는 온디바이스 번역 후 자막의 번역칸을 채우고, TTS 도 번역문을 내 언어로 읽는다
+        const sourceLang = msg.lang != null ? fromBackendLang(msg.lang) : null;
+
+        if (sourceLang && sourceLang !== myLanguage) {
+          void translate(msg.message, myLanguage, sourceLang).then((translated) => {
+            if (translated) {
+              setCaptionTranslation(caption.id, translated);
+              if (shouldSpeak) speakMessage(translated, toBackendLang(myLanguage));
+            } else if (shouldSpeak) {
+              speakMessage(msg.message, msg.lang); // 번역 실패 시 원문·원어로 폴백
+            }
+          });
+        } else if (shouldSpeak) {
           speakMessage(msg.message, msg.lang);
         }
       },
@@ -147,7 +164,7 @@ export function useMeetingConnection(
       meshRef.current = null;
       sttRef.current = null;
     };
-  }, [meetingId, senderId, senderName, myLanguage, addCaption, setParticipants]);
+  }, [meetingId, senderId, senderName, myLanguage, addCaption, setCaptionTranslation, setParticipants]);
 
   const send = useCallback((payload: ChatMessageRequest) => {
     socketRef.current?.send(payload);
