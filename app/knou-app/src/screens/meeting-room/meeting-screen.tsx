@@ -90,7 +90,14 @@ export function MeetingScreen() {
   );
 
   const handleSend = (text: string) => {
-    send({ senderId: backendUserId ?? 0, senderName: user?.name ?? '나', message: text, lang: toBackendLang(myLang) });
+    // source: CHAT — 수신 측에서 TTS 로 읽어줌 (STT 발화와 구분)
+    send({
+      senderId: backendUserId ?? 0,
+      senderName: user?.name ?? '나',
+      message: text,
+      lang: toBackendLang(myLang),
+      source: 'CHAT',
+    });
   };
 
   const handleEnd = async () => {
