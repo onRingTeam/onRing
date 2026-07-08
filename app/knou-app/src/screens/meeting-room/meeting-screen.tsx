@@ -45,7 +45,8 @@ export function MeetingScreen() {
   const { send, setMicEnabled } = useMeetingConnection(meetingId, user?.name ?? '나');
 
   const handleSend = (text: string) => {
-    send({ senderName: user?.name ?? '나', message: text, lang: toBackendLang(myLang) });
+    // source: CHAT — 수신 측에서 TTS 로 읽어줌 (STT 발화와 구분)
+    send({ senderName: user?.name ?? '나', message: text, lang: toBackendLang(myLang), source: 'CHAT' });
   };
 
   const handleEnd = async () => {

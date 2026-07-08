@@ -15,11 +15,19 @@ export const fromBackendLang = (lang: BackendLang | null | undefined): LangCode 
  * 앱·웹·서버가 공유하는 단일 계약(contract).
  */
 
+/**
+ * 메시지 출처 — 수신 측 TTS 재생 판단용.
+ * CHAT(직접 타이핑) 만 TTS 재생, STT(음성 자동 변환)는 이미 WebRTC 로 들렸으므로 제외.
+ */
+export type MessageSource = 'CHAT' | 'STT';
+
 /** 클라이언트 → 서버 발행 (`/app/meetings/{id}/send`). */
 export interface ChatMessageRequest {
   senderName: string;
   message: string;
   lang?: BackendLang | null;
+  /** 생략 시 서버 기본 CHAT */
+  source?: MessageSource;
 }
 
 /** 서버 → 구독자 브로드캐스트 (`/topic/meetings/{id}`). */
@@ -29,6 +37,7 @@ export interface ChatMessageResponse {
   lang: BackendLang | null;
   /** ISO LocalDateTime 문자열 (예: "2026-06-26T14:05:12") */
   sentAt: string;
+  source?: MessageSource;
 }
 
 /**

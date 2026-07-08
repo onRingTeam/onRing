@@ -8,9 +8,9 @@ import { useElapsed } from '@/hooks/use-elapsed';
 import { useMeetingStore, useSettingsStore } from '@/store';
 import { MeetingSocket } from '@/lib/websocket';
 import { MeshVoiceCall } from '@/lib/webrtc/mesh-voice-call';
-import { endMeeting as endMeetingApi } from './api';
 import { LiveStt } from '@/lib/stt/live-stt';
-import { fetchMessages } from './api';
+import { speakMessage, stopSpeaking } from '@/lib/tts';
+import { endMeeting as endMeetingApi, fetchMessages } from './api';
 
 /**
  * 음성통화 권한 요청 (iOS는 getUserMedia 시 네이티브 팝업 자동).
@@ -74,10 +74,11 @@ export function useMeetingConnection(meetingId: number | null, senderName: strin
       sendSignal: (msg) => socket.sendSignal(msg),
     });
     // 내 발화 라이브 STT → 확정 문장을 채팅(자막) 채널로 발행 (설계 §2: 자기 마이크만 STT)
+    // source: STT — 수신 측이 TTS 재생에서 제외 (이미 WebRTC 음성으로 들림)
     const stt = new LiveStt({
       lang: myLanguage,
       onFinal: (text) =>
-        socket.send({ senderName, message: text, lang: toBackendLang(myLanguage) }),
+        socket.send({ senderName, message: text, lang: toBackendLang(myLanguage), source: 'STT' }),
     });
 
     socket.connect(meetingId, {
@@ -85,6 +86,10 @@ export function useMeetingConnection(meetingId: number | null, senderName: strin
       onMessage: (msg) => {
         lastSentAtRef.current = msg.sentAt;
         addCaption(toCaption(msg));
+        // 타이핑 채팅(CHAT)만 TTS 로 읽어준다 — STT 발화는 WebRTC 음성으로 이미 들렸고, 본인 메시지 제외
+        if (msg.source !== 'STT' && msg.senderName !== senderName) {
+          speakMessage(msg.message, msg.lang);
+        }
       },
       onParticipants: (list) => setParticipants(list),
       onSignal: (msg) => void mesh.handleSignal(msg),
@@ -114,6 +119,7 @@ export function useMeetingConnection(meetingId: number | null, senderName: strin
 
     return () => {
       stt.stop();
+      stopSpeaking();
       mesh.stop();
       socket.disconnect();
       socketRef.current = null;

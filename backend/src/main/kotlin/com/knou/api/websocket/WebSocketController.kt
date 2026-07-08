@@ -40,6 +40,7 @@ class WebSocketController(
             message = request.message,
             lang = request.lang,
             sentAt = sentAt,
+            source = request.source,
         )
     }
 }
