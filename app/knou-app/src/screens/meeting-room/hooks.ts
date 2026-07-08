@@ -53,7 +53,7 @@ function toCaption(msg: ChatMessageResponse): CaptionItem {
  * @param meetingId 회의 참여(POST /api/meetings/join) 응답의 meetingId. 없으면 연결하지 않음.
  * @returns 서버로 메시지를 발행하는 send 함수
  */
-export function useMeetingConnection(meetingId: number | null, senderName: string) {
+export function useMeetingConnection(meetingId: number | null, senderId: number, senderName: string) {
   const addCaption = useMeetingStore((s) => s.addCaption);
   const setParticipants = useMeetingStore((s) => s.setParticipants);
   const myLanguage = useSettingsStore((s) => s.myLanguage);
@@ -78,7 +78,7 @@ export function useMeetingConnection(meetingId: number | null, senderName: strin
     const stt = new LiveStt({
       lang: myLanguage,
       onFinal: (text) =>
-        socket.send({ senderName, message: text, lang: toBackendLang(myLanguage), source: 'STT' }),
+        socket.send({ senderId, senderName, message: text, lang: toBackendLang(myLanguage), source: 'STT' }),
     });
 
     socket.connect(meetingId, {
@@ -99,7 +99,7 @@ export function useMeetingConnection(meetingId: number | null, senderName: strin
           .then((missed) => {
             for (const m of missed) {
               lastSentAtRef.current = m.spokenAt;
-              addCaption(toCaption({ senderName: m.speakerName, message: m.original, lang: null, sentAt: m.spokenAt }));
+              addCaption(toCaption({ senderId: m.userId, senderName: m.speakerName, message: m.original, lang: null, sentAt: m.spokenAt }));
             }
           })
           .catch((e) => console.warn('[chat] 놓친 메시지 복구 실패', e));
@@ -126,7 +126,7 @@ export function useMeetingConnection(meetingId: number | null, senderName: strin
       meshRef.current = null;
       sttRef.current = null;
     };
-  }, [meetingId, senderName, myLanguage, addCaption, setParticipants]);
+  }, [meetingId, senderId, senderName, myLanguage, addCaption, setParticipants]);
 
   const send = useCallback((payload: ChatMessageRequest) => {
     socketRef.current?.send(payload);

@@ -28,6 +28,7 @@ export function MeetingScreen() {
   const clearActiveMeeting = useMeetingStore((s) => s.clearActiveMeeting);
   const participants = useMeetingStore((s) => s.participants);
   const user = useAuthStore((s) => s.user);
+  const backendUserId = useAuthStore((s) => s.backendUserId);
 
   const [myLang, setMyLang] = useState<LangCode>('en');
   // 종료 후 store가 비워지면 아래 자동시작 effect가 재실행돼 회의가 되살아나는 것을 막는 가드.
@@ -42,11 +43,17 @@ export function MeetingScreen() {
   }, [meetingId, inMeeting, code, startMeeting]);
 
   // 회의 화면이 켜져 있는 동안만 STOMP 연결 (채팅 + presence + WebRTC 시그널링) & 음성통화
-  const { send, setMicEnabled } = useMeetingConnection(meetingId, user?.name ?? '나');
+  const { send, setMicEnabled } = useMeetingConnection(meetingId, backendUserId ?? 0, user?.name ?? '나');
 
   const handleSend = (text: string) => {
     // source: CHAT — 수신 측에서 TTS 로 읽어줌 (STT 발화와 구분)
-    send({ senderName: user?.name ?? '나', message: text, lang: toBackendLang(myLang), source: 'CHAT' });
+    send({
+      senderId: backendUserId ?? 0,
+      senderName: user?.name ?? '나',
+      message: text,
+      lang: toBackendLang(myLang),
+      source: 'CHAT',
+    });
   };
 
   const handleEnd = async () => {
@@ -61,8 +68,13 @@ export function MeetingScreen() {
     // 종료 시점에 스토어 진행중 회의 상태 해제 (홈/회의탭 즉시 정합).
     clearActiveMeeting();
     endMeeting(captions);
-    // 종료 후엔 회의화면을 벗어나 홈으로 (탭 화면이라 back()으론 안 벗어나짐).
-    router.replace('/(tabs)');
+    // 종료 후엔 회의화면을 벗어나 상세(요약)로 이동. fresh=1 로 요약 생성 완료까지 폴링.
+    // meetingId 가 없으면(비정상) 홈으로 폴백.
+    if (meetingId !== null) {
+      router.replace({ pathname: '/notes/[id]', params: { id: String(meetingId), fresh: '1' } });
+    } else {
+      router.replace('/(tabs)');
+    }
   };
 
   // presence가 오기 전에도 본인은 항상 보이도록 (서버 목록에 내 이름 있으면 중복 제거)

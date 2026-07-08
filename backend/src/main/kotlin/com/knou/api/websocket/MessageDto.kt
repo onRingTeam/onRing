@@ -20,7 +20,10 @@ enum class MessageSource {
 
 /** 클라이언트 → 서버 발행 (`/app/meetings/{id}/send`). */
 data class MessageRequest(
-    /** 발화자 표시명. TODO Phase 6: 인증 도입 후 토큰의 userId로 대체(클라이언트 신뢰 X). */
+    /** 발화자 회원 ID. 종료 후 요약(액션아이템·발화 수) 정합성의 기준. TODO Phase 6: 인증 도입 후 토큰의 userId로 대체(클라이언트 신뢰 X). */
+    val senderId: Long,
+
+    /** 발화자 표시명. */
     val senderName: String,
 
     /** 발화 내용. */
@@ -35,6 +38,7 @@ data class MessageRequest(
 
 /** 서버 → 구독자 브로드캐스트 (`/topic/meetings/{id}`). */
 data class MessageResponse(
+    val senderId: Long,
     val senderName: String,
     val message: String,
     val lang: Language?,
@@ -42,5 +46,5 @@ data class MessageResponse(
     /** 출처 그대로 에코 — 수신 측 TTS 재생 판단용. */
     val source: MessageSource = MessageSource.CHAT,
     // TODO Phase 4-2: 수신자 언어로 번역된 결과(translatedText, targetLang) 추가
-    // TODO Phase 6: messageId, senderId 추가(영속화 후)
+    // TODO Phase 6: messageId 추가(영속화 후)
 )

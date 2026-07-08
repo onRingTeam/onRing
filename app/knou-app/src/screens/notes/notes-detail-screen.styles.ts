@@ -63,6 +63,11 @@ export const styles = StyleSheet.create({
   summaryText: {
     lineHeight: 20,
   },
+  summaryPending: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
   actionItem: {
     flexDirection: 'row',
     gap: Spacing.two,

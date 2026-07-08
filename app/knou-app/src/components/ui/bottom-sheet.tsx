@@ -1,5 +1,6 @@
+import { useEffect } from 'react';
 import {
-  KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Platform,
   StyleSheet,
@@ -7,6 +8,11 @@ import {
   View,
   type ViewProps,
 } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -17,22 +23,49 @@ export interface BottomSheetProps extends ViewProps {
   children?: React.ReactNode;
 }
 
+// iOS는 will* 이벤트로 키보드와 동시에, Android는 did* 이벤트로 반응
+const SHOW_EVENT = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+const HIDE_EVENT = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
 export function BottomSheet({ visible, onClose, children, style, ...props }: BottomSheetProps) {
   const theme = useTheme();
 
+  // 키보드 높이를 단일 애니메이션 값으로 관리한다.
+  // (KeyboardAvoidingView + OS 창 리사이즈가 서로 밀고 당기며 위치가 튀는 문제를 회피)
+  const keyboardHeight = useSharedValue(0);
+
+  useEffect(() => {
+    const onShow = Keyboard.addListener(SHOW_EVENT, (e) => {
+      keyboardHeight.value = withTiming(e.endCoordinates.height, {
+        duration: e.duration || 150,
+      });
+    });
+    const onHide = Keyboard.addListener(HIDE_EVENT, (e) => {
+      keyboardHeight.value = withTiming(0, { duration: e.duration || 150 });
+    });
+    return () => {
+      onShow.remove();
+      onHide.remove();
+    };
+  }, [keyboardHeight]);
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -keyboardHeight.value }],
+  }));
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      {/* 키보드가 올라오면 시트를 그 위로 밀어올림 */}
-      <KeyboardAvoidingView
-        style={styles.backdrop}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
+      <View style={styles.backdrop}>
         <TouchableOpacity style={styles.backdropTouch} onPress={onClose} activeOpacity={1} />
-        <View style={[styles.sheet, { backgroundColor: theme.background }, style]} {...props}>
+        {/* 키보드가 올라오면 그 높이만큼 시트를 위로 밀어올림 */}
+        <Animated.View
+          style={[styles.sheet, sheetStyle, { backgroundColor: theme.background }, style]}
+          {...props}
+        >
           <View style={styles.grabber} />
           {children}
-        </View>
-      </KeyboardAvoidingView>
+        </Animated.View>
+      </View>
     </Modal>
   );
 }

@@ -19,3 +19,8 @@ jwt:
 supabase:
   url: ${SUPABASE_URL:}
   anon-key: ${SUPABASE_ANON_KEY:}
+
+# Gemini (회의 종료 후 AI 요약/액션아이템 생성). 키 미설정 시 요약은 생략되고 회의 종료 흐름엔 영향 없음.
+gemini:
+  api-key: ${GEMINI_API_KEY:}
+  model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
