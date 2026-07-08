@@ -92,8 +92,9 @@ export function MeetingScreen() {
     backendUserId ?? 0,
     user?.name ?? '나',
     myLang,
-    finishLocally,
-
+    // 원격 종료(개설자가 종료 → STOMP 알림/재확인) 경로 — 알림 띄우고 요약으로 이동
+    () => finishLocally(true),
+  );
 
   const handleSend = (text: string) => {
     // source: CHAT — 수신 측에서 TTS 로 읽어줌 (STT 발화와 구분)
