@@ -8,7 +8,7 @@
  *    - 회의 ID [PK] / 회의명 / 회의 날짜 / 회의 코드[unique] / 요약내용 / 회의 소요 시간 / 상태(진행중/종료)
  *  회의 참석(meeting_attendance)
  *    - 회의 참석 ID [PK] / 회의 ID [FK] / 회원 ID [FK] / 즐겨찾기 여부(Y/N)
- *      / 액션아이템 / 발화빈도수 / 번역 언어 / BM ID / 개설여부(Y/N)
+ *      / 사용 여부(Y/N, 사용자별 회의록 삭제) / 액션아이템 / 발화빈도수 / 번역 언어 / BM ID / 개설여부(Y/N)
  * ========================================================================= */
 
 -- ----------------------------------------------------------------------------
@@ -104,6 +104,7 @@ CREATE TABLE meeting_attendance (
     meeting_id         BIGINT      NOT NULL                COMMENT '회의 ID',
     user_id            BIGINT      NOT NULL                COMMENT '회원 ID',
     favorite_yn        CHAR(1)     NOT NULL DEFAULT 'N'    COMMENT '즐겨찾기 여부 Y/N',
+    use_yn             CHAR(1)     NOT NULL DEFAULT 'Y'    COMMENT '사용 여부 Y/N (N=사용자가 회의록 삭제)',
     action_item        TEXT        NULL                    COMMENT '액션아이템',
     speech_count       INT         NOT NULL DEFAULT 0      COMMENT '발화빈도수',
     translate_language VARCHAR(30) NULL                    COMMENT '번역 언어 (채팅 당시 유저가 선택한 언어)',
@@ -116,7 +117,8 @@ CREATE TABLE meeting_attendance (
     KEY idx_attendance_user (user_id),
     CONSTRAINT fk_attendance_meeting FOREIGN KEY (meeting_id) REFERENCES meeting (meeting_id),
     CONSTRAINT fk_attendance_user    FOREIGN KEY (user_id)    REFERENCES `user` (user_id),
-    CONSTRAINT ck_attendance_favorite_yn CHECK (favorite_yn IN ('Y', 'N'))
+    CONSTRAINT ck_attendance_favorite_yn CHECK (favorite_yn IN ('Y', 'N')),
+    CONSTRAINT ck_attendance_use_yn      CHECK (use_yn IN ('Y', 'N'))
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci

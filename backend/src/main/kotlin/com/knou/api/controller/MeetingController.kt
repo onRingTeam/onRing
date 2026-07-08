@@ -3,6 +3,7 @@ package com.knou.api.controller
 import com.knou.api.dto.common.ExportFormat
 import com.knou.api.dto.common.PageResponse
 import com.knou.api.dto.meeting.CreateMeetingRequest
+import com.knou.api.dto.meeting.DeleteMeetingsRequest
 import com.knou.api.dto.meeting.ExportRequest
 import com.knou.api.dto.meeting.JoinMeetingRequest
 import com.knou.api.dto.meeting.MeetingDetailResponse
@@ -10,12 +11,14 @@ import com.knou.api.dto.meeting.MeetingListItemResponse
 import com.knou.api.dto.meeting.MeetingMessageResponse
 import com.knou.api.dto.meeting.MeetingRoomResponse
 import com.knou.api.service.MeetingService
+import com.knou.api.websocket.MeetingStatusEvent
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
 import jakarta.validation.Valid
 import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.ResponseEntity
+import org.springframework.messaging.simp.SimpMessagingTemplate
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
@@ -38,6 +41,7 @@ import java.time.LocalDateTime
 @RequestMapping("/api/meetings")
 class MeetingController(
     private val meetingService: MeetingService,
+    private val messagingTemplate: SimpMessagingTemplate,
 ) {
 
     @Operation(summary = "신규 회의 생성", description = "회의명·내 언어로 회의를 생성한다. 회의 코드는 '날짜+회의명 첫글자+UUID'로 자동 생성. (화면 2-b-i-1)")
@@ -130,6 +134,20 @@ class MeetingController(
         return ResponseEntity.noContent().build()
     }
 
+    @Operation(
+        summary = "회의록 선택 삭제",
+        description = "선택한 회의들의 내 참석 레코드 use_yn 을 N 으로 바꿔 내 회의록 목록에서 숨긴다. " +
+            "참석자별 소프트 삭제라 다른 참석자에게는 영향이 없다. (회의록 화면 삭제 모드)",
+    )
+    @PostMapping("/delete")
+    fun deleteMeetings(
+        @RequestHeader("X-User-Id") userId: Long,
+        @Valid @RequestBody request: DeleteMeetingsRequest,
+    ): ResponseEntity<Void> {
+        meetingService.delete(userId, request.meetingIds)
+        return ResponseEntity.noContent().build()
+    }
+
     @Operation(summary = "회의 종료", description = "개설자만 회의를 종료할 수 있다. (화면 5-a-1)")
     @PostMapping("/{meetingId}/end")
     fun endMeeting(
@@ -138,6 +156,11 @@ class MeetingController(
     ): ResponseEntity<Void> {
         meetingService.end(userId, meetingId)
         meetingService.clearChat(meetingId)
+        // 참여자 전원에게 종료 알림 — 수신 측은 회의 화면을 정리하고 요약 화면으로 이동
+        messagingTemplate.convertAndSend(
+            "/topic/meetings/$meetingId/status",
+            MeetingStatusEvent(type = "ENDED", meetingId = meetingId, occurredAt = LocalDateTime.now()),
+        )
         return ResponseEntity.noContent().build()
     }
 

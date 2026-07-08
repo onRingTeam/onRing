@@ -53,13 +53,22 @@ function toCaption(msg: ChatMessageResponse): CaptionItem {
  * @param meetingId 회의 참여(POST /api/meetings/join) 응답의 meetingId. 없으면 연결하지 않음.
  * @returns 서버로 메시지를 발행하는 send 함수
  */
-export function useMeetingConnection(meetingId: number | null, senderId: number, senderName: string) {
+export function useMeetingConnection(
+  meetingId: number | null,
+  senderId: number,
+  senderName: string,
+  /** 개설자가 회의를 종료했을 때(STOMP status 토픽 ENDED) 호출 — 화면 정리·이동용 */
+  onMeetingEnded?: () => void,
+) {
   const addCaption = useMeetingStore((s) => s.addCaption);
   const setParticipants = useMeetingStore((s) => s.setParticipants);
   const myLanguage = useSettingsStore((s) => s.myLanguage);
   const socketRef = useRef<MeetingSocket | null>(null);
   const meshRef = useRef<MeshVoiceCall | null>(null);
   const sttRef = useRef<LiveStt | null>(null);
+  // 콜백 최신값 참조 (effect 재실행 없이) — 렌더마다 바뀌는 함수 identity 로 재연결되는 것 방지
+  const onMeetingEndedRef = useRef(onMeetingEnded);
+  onMeetingEndedRef.current = onMeetingEnded;
   // 마지막으로 수신한 채팅의 서버 시각 — 재연결 시 이 시각 이후 놓친 메시지 복구 기준
   const lastSentAtRef = useRef<string | null>(null);
   // 세션 고유 peerId (Mesh 시그널링 식별자)
@@ -88,6 +97,9 @@ export function useMeetingConnection(meetingId: number | null, senderId: number,
       },
       onParticipants: (list) => setParticipants(list),
       onSignal: (msg) => void mesh.handleSignal(msg),
+      onStatus: (event) => {
+        if (event.type === 'ENDED') onMeetingEndedRef.current?.();
+      },
       onConnect: async () => {
         // 끊김 동안 놓친 채팅 복구 (서버 인메모리 버퍼, 시간순). 중복은 store 에서 id 로 걸러짐.
         void fetchMessages(meetingId, lastSentAtRef.current ?? undefined)

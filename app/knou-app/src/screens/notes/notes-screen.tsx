@@ -10,7 +10,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { MeetingListItem } from '@/types/meeting';
 import { LANG_BADGE, formatDuration, formatMeetingDate } from '@/utils/meeting-format';
-import { useMeetings, useToggleFavorite } from './hooks';
+import { useDeleteMeetings, useMeetings, useToggleFavorite } from './hooks';
 import { styles } from './notes-screen.styles';
 
 type FilterTab = 'all' | 'starred';
@@ -21,16 +21,19 @@ export function NotesScreen() {
   const scheme = useColorScheme();
   const colors = Colors[scheme === 'dark' ? 'dark' : 'light'];
 
-  // 3. useState (검색어 / 필터 탭)
+  // 3. useState (검색어 / 필터 탭 / 삭제 모드)
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<FilterTab>('all');
+  const [deleteMode, setDeleteMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
-  // 4. 서버 상태 — 회의록 목록 + 즐겨찾기 토글
+  // 4. 서버 상태 — 회의록 목록 + 즐겨찾기 토글 + 선택 삭제
   const { data: meetings = [], isLoading } = useMeetings({
     keyword: query,
     favoriteOnly: filter === 'starred',
   });
   const favoriteMutation = useToggleFavorite();
+  const deleteMutation = useDeleteMeetings();
 
   // 5. 함수들
   const handleDetail = (meeting: MeetingListItem) => {
@@ -40,6 +43,33 @@ export function NotesScreen() {
   const handleToggleStar = (meeting: MeetingListItem) => {
     if (favoriteMutation.isPending) return;
     favoriteMutation.mutate(meeting.meetingId);
+  };
+
+  // 삭제 모드 진입/해제 (해제 시 선택 초기화)
+  const handleToggleDeleteMode = () => {
+    setDeleteMode((prev) => !prev);
+    setSelectedIds(new Set());
+  };
+
+  // 삭제 대상 체크박스 토글
+  const handleToggleSelect = (meetingId: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(meetingId)) next.delete(meetingId);
+      else next.add(meetingId);
+      return next;
+    });
+  };
+
+  // 선택한 회의록 삭제 — 내 참석 레코드 use_yn=N 처리 후 목록 갱신
+  const handleDeleteSelected = () => {
+    if (selectedIds.size === 0 || deleteMutation.isPending) return;
+    deleteMutation.mutate([...selectedIds], {
+      onSuccess: () => {
+        setDeleteMode(false);
+        setSelectedIds(new Set());
+      },
+    });
   };
 
   // 6. Return
@@ -93,6 +123,38 @@ export function NotesScreen() {
                 </TouchableOpacity>
               );
             })}
+            <View style={styles.deleteControls}>
+              {deleteMode && (
+                <TouchableOpacity
+                  onPress={handleToggleDeleteMode}
+                  activeOpacity={0.7}
+                  style={styles.deleteBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="삭제 취소"
+                >
+                  <ThemedText type="small" themeColor="textSecondary">
+                    취소
+                  </ThemedText>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                onPress={deleteMode ? handleDeleteSelected : handleToggleDeleteMode}
+                activeOpacity={0.7}
+                style={styles.deleteBtn}
+                disabled={deleteMode && (selectedIds.size === 0 || deleteMutation.isPending)}
+                accessibilityRole="button"
+                accessibilityLabel={deleteMode ? '선택한 회의록 삭제' : '삭제 모드'}
+                accessibilityState={{ disabled: deleteMode && selectedIds.size === 0 }}
+              >
+                <ThemedText type="small" style={[styles.deleteText, { color: colors.error }]}>
+                  {deleteMode
+                    ? deleteMutation.isPending
+                      ? '삭제 중…'
+                      : `삭제${selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}`
+                    : '삭제'}
+                </ThemedText>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -113,15 +175,31 @@ export function NotesScreen() {
                 style={[styles.card, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}
               >
                 <View style={styles.cardTop}>
+                  {deleteMode && (
+                    <TouchableOpacity
+                      onPress={() => handleToggleSelect(m.meetingId)}
+                      activeOpacity={0.7}
+                      style={styles.checkboxBtn}
+                      accessibilityRole="checkbox"
+                      accessibilityLabel={`${m.title} 삭제 선택`}
+                      accessibilityState={{ checked: selectedIds.has(m.meetingId) }}
+                    >
+                      <Ionicons
+                        name={selectedIds.has(m.meetingId) ? 'checkbox' : 'square-outline'}
+                        size={20}
+                        color={selectedIds.has(m.meetingId) ? colors.error : colors.textSecondary}
+                      />
+                    </TouchableOpacity>
+                  )}
                   <View style={[styles.cardIcon, { backgroundColor: colors.backgroundSelected }]}>
                     <Feather name="file-text" size={16} color={colors.primary} />
                   </View>
                   <TouchableOpacity
                     style={styles.cardBody}
-                    onPress={() => handleDetail(m)}
+                    onPress={() => (deleteMode ? handleToggleSelect(m.meetingId) : handleDetail(m))}
                     activeOpacity={0.7}
                     accessibilityRole="button"
-                    accessibilityLabel={`${m.title} 상세보기`}
+                    accessibilityLabel={deleteMode ? `${m.title} 삭제 선택` : `${m.title} 상세보기`}
                   >
                     <ThemedText type="smallBold" numberOfLines={1}>
                       {m.title}

@@ -35,6 +35,17 @@ export interface ChatMessageResponse {
 }
 
 /**
+ * 회의 상태 변경 브로드캐스트 (`/topic/meetings/{id}/status`) — 백엔드 `MeetingStatusEvent`와 일치.
+ * 개설자가 종료하면 type=ENDED 로 발행되며, 수신한 참여자는 회의 화면을 정리한다.
+ */
+export interface MeetingStatusEvent {
+  type: 'ENDED';
+  meetingId: number;
+  /** ISO LocalDateTime 문자열 */
+  occurredAt: string;
+}
+
+/**
  * 참여자 presence 계약 (두 번째 토픽) — 백엔드 `ParticipantDto.kt`와 동일.
  */
 

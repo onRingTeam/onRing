@@ -17,6 +17,8 @@ interface AuthState {
 
   setAuth: (args: { user: UserProfile; backendUserId: number; backendToken: string }) => void;
   setBootstrapping: (v: boolean) => void;
+  /** 프로필(회원명) 수정 성공 시 세션 내 표시 이름 동기화 (홈 인사말·채팅 발화자명). */
+  updateUserName: (name: string) => void;
   logout: () => void;
 }
 
@@ -30,5 +32,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   setAuth: ({ user, backendUserId, backendToken }) =>
     set({ user, backendUserId, backendToken, isAuthenticated: true, isBootstrapping: false }),
   setBootstrapping: (v) => set({ isBootstrapping: v }),
+  updateUserName: (name) =>
+    set((state) => (state.user ? { user: { ...state.user, name } } : state)),
   logout: () => set({ user: null, backendUserId: null, backendToken: null, isAuthenticated: false }),
 }));

@@ -27,12 +27,14 @@ export function MeetingScreen() {
   const startMeeting = useMeetingStore((s) => s.startMeeting);
   const clearActiveMeeting = useMeetingStore((s) => s.clearActiveMeeting);
   const participants = useMeetingStore((s) => s.participants);
+  const activeMeeting = useMeetingStore((s) => s.activeMeeting);
   const user = useAuthStore((s) => s.user);
   const backendUserId = useAuthStore((s) => s.backendUserId);
 
   const [myLang, setMyLang] = useState<LangCode>('en');
   // 종료 후 store가 비워지면 아래 자동시작 effect가 재실행돼 회의가 되살아나는 것을 막는 가드.
   const startedRef = useRef(false);
+  const streamRef = useRef<ScrollView>(null);
 
   // 실제 회의(meetingId 있음)로 들어온 경우에만 세션 시작 (mount당 1회). 회의 탭 직접 진입 = 가짜 회의 방지.
   useEffect(() => {
@@ -42,8 +44,31 @@ export function MeetingScreen() {
     }
   }, [meetingId, inMeeting, code, startMeeting]);
 
-  // 회의 화면이 켜져 있는 동안만 STOMP 연결 (채팅 + presence + WebRTC 시그널링) & 음성통화
-  const { send, setMicEnabled } = useMeetingConnection(meetingId, backendUserId ?? 0, user?.name ?? '나');
+  // 로컬 종료 처리(스토어 정리 + 요약 화면 이동). 내가 종료했든 개설자 종료 알림을 받았든 공통.
+  // STOMP 알림과 내 종료가 겹쳐도 1회만 실행되도록 가드.
+  const endedRef = useRef(false);
+  const finishLocally = () => {
+    if (endedRef.current) return;
+    endedRef.current = true;
+    // 종료 시점에 스토어 진행중 회의 상태 해제 (홈/회의탭 즉시 정합).
+    clearActiveMeeting();
+    endMeeting(captions);
+    // 종료 후엔 회의화면을 벗어나 상세(요약)로 이동. fresh=1 로 요약 생성 완료까지 폴링.
+    // meetingId 가 없으면(비정상) 홈으로 폴백.
+    if (meetingId !== null) {
+      router.replace({ pathname: '/notes/[id]', params: { id: String(meetingId), fresh: '1' } });
+    } else {
+      router.replace('/(tabs)');
+    }
+  };
+
+  // 회의 화면이 켜져 있는 동안만 STOMP 연결 (채팅 + presence + WebRTC 시그널링 + 종료 알림) & 음성통화
+  const { send, setMicEnabled } = useMeetingConnection(
+    meetingId,
+    backendUserId ?? 0,
+    user?.name ?? '나',
+    finishLocally,
+  );
 
   const handleSend = (text: string) => {
     send({ senderId: backendUserId ?? 0, senderName: user?.name ?? '나', message: text, lang: toBackendLang(myLang) });
@@ -58,16 +83,7 @@ export function MeetingScreen() {
         console.warn('[meeting] 종료 실패(개설자 아님이거나 이미 종료)', e);
       }
     }
-    // 종료 시점에 스토어 진행중 회의 상태 해제 (홈/회의탭 즉시 정합).
-    clearActiveMeeting();
-    endMeeting(captions);
-    // 종료 후엔 회의화면을 벗어나 상세(요약)로 이동. fresh=1 로 요약 생성 완료까지 폴링.
-    // meetingId 가 없으면(비정상) 홈으로 폴백.
-    if (meetingId !== null) {
-      router.replace({ pathname: '/notes/[id]', params: { id: String(meetingId), fresh: '1' } });
-    } else {
-      router.replace('/(tabs)');
-    }
+    finishLocally();
   };
 
   // presence가 오기 전에도 본인은 항상 보이도록 (서버 목록에 내 이름 있으면 중복 제거)
@@ -88,15 +104,18 @@ export function MeetingScreen() {
         code={code}
         elapsed={elapsed}
         participants={displayParticipants}
-        onEnd={handleEnd}
+        // 종료는 개설자 전용 (host=false 참여자에게는 버튼 미노출)
+        onEnd={activeMeeting?.host ? handleEnd : undefined}
       />
 
       <LanguageBar selected={myLang} onSelect={setMyLang} />
 
       <ScrollView
+        ref={streamRef}
         style={styles.stream}
         contentContainerStyle={styles.streamContent}
         showsVerticalScrollIndicator={false}
+        onContentSizeChange={() => streamRef.current?.scrollToEnd({ animated: true })}
       >
         <CaptionStream captions={captions} />
       </ScrollView>
