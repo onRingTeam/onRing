@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useQueryClient } from '@tanstack/react-query';
 import { Feather } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
@@ -20,6 +21,7 @@ import { useEndMeeting, useMeetingConnection, useMeetingSession } from './hooks'
 
 export function MeetingScreen() {
   const router = useRouter();
+  const qc = useQueryClient();
   // meetingId: 회의 생성/참여 API 응답값. code: 표시·공유용 회의 코드.
   const { code, meetingId: meetingIdParam } = useLocalSearchParams<{ code?: string; meetingId?: string }>();
   const meetingId = meetingIdParam ? Number(meetingIdParam) : null;
@@ -52,18 +54,35 @@ export function MeetingScreen() {
   // 로컬 종료 처리(스토어 정리 + 요약 화면 이동). 내가 종료했든 개설자 종료 알림을 받았든 공통.
   // STOMP 알림과 내 종료가 겹쳐도 1회만 실행되도록 가드.
   const endedRef = useRef(false);
-  const finishLocally = () => {
+  const finishLocally = (remote = false) => {
     if (endedRef.current) return;
     endedRef.current = true;
     // 종료 시점에 스토어 진행중 회의 상태 해제 (홈/회의탭 즉시 정합).
     clearActiveMeeting();
     endMeeting(captions);
+    // 참여자(비개설자)도 방금 종료된 회의가 홈 최근 회의·회의록에 바로 뜨도록 목록 캐시 무효화.
+    qc.invalidateQueries({ queryKey: ['recent-meetings'] });
+    qc.invalidateQueries({ queryKey: ['meetings'] });
     // 종료 후엔 회의화면을 벗어나 상세(요약)로 이동. fresh=1 로 요약 생성 완료까지 폴링.
     // meetingId 가 없으면(비정상) 홈으로 폴백.
-    if (meetingId !== null) {
-      router.replace({ pathname: '/notes/[id]', params: { id: String(meetingId), fresh: '1' } });
+    const goSummary = () => {
+      if (meetingId !== null) {
+        router.replace({ pathname: '/notes/[id]', params: { id: String(meetingId), fresh: '1' } });
+      } else {
+        router.replace('/(tabs)');
+      }
+    };
+    // 상대방(개설자)이 종료한 경우엔 참여자에게 종료 사실을 알리고, 확인 시 요약으로 이동.
+    // 내가 직접 누른 종료는 알림 없이 바로 이동.
+    if (remote) {
+      Alert.alert(
+        '회의가 종료되었어요',
+        '개설자가 회의를 종료했습니다. 회의 요약을 확인해 보세요.',
+        [{ text: '요약 보기', onPress: goSummary }],
+        { cancelable: false, onDismiss: goSummary },
+      );
     } else {
-      router.replace('/(tabs)');
+      goSummary();
     }
   };
 
@@ -74,7 +93,7 @@ export function MeetingScreen() {
     user?.name ?? '나',
     myLang,
     finishLocally,
-  );
+
 
   const handleSend = (text: string) => {
     // source: CHAT — 수신 측에서 TTS 로 읽어줌 (STT 발화와 구분)

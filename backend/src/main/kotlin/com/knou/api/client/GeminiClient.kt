@@ -58,13 +58,12 @@ class GeminiClient(
      * @throws org.springframework.web.client.RestClientException 호출 실패
      */
     fun summarizeMeeting(
-        meetingTitle: String,
         attendees: List<AttendeeInfo>,
         messages: List<MeetingMessageResponse>,
     ): MeetingSummaryResult {
         check(props.apiKey.isNotBlank()) { "GEMINI_API_KEY 미설정" }
 
-        val prompt = buildPrompt(meetingTitle, attendees, messages)
+        val prompt = buildPrompt(attendees, messages)
         val requestBody = mapOf(
             "contents" to listOf(mapOf("parts" to listOf(mapOf("text" to prompt)))),
             "generationConfig" to mapOf(
@@ -88,9 +87,8 @@ class GeminiClient(
         return objectMapper.readValue(json)
     }
 
-    /** 한국어 회의 요약 프롬프트 조립. */
+    /** 한국어 회의 요약 프롬프트 조립. 회의 제목은 요약 편향을 막기 위해 프롬프트에서 제외한다(대화 내용만으로 요약). */
     private fun buildPrompt(
-        meetingTitle: String,
         attendees: List<AttendeeInfo>,
         messages: List<MeetingMessageResponse>,
     ): String {
@@ -100,8 +98,6 @@ class GeminiClient(
         }
         return """
             당신은 다국어 회의 기록을 정리하는 어시스턴트입니다. 아래 회의 대화를 읽고 JSON 으로만 답하세요.
-
-            회의명: $meetingTitle
 
             참석자 (userId — 이름):
             $attendeeList

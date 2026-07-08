@@ -10,7 +10,7 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useUiStore, useAuthStore, useMeetingStore } from '@/store';
 import type { MeetingListItem } from '@/types/meeting';
-import { formatDuration, formatMeetingDate } from '@/utils/meeting-format';
+import { LANG_BADGE, formatDuration, formatMeetingDate } from '@/utils/meeting-format';
 import { useHydrateActiveMeeting, useJoinMeeting, useRecentMeetings } from './hooks';
 import { CreateMeetingSheet } from './components/create-meeting-sheet';
 import { styles } from './home-screen.styles';
@@ -216,7 +216,7 @@ export function HomeScreen() {
                     onPress={() => handleSelectMeeting(meeting)}
                     activeOpacity={0.7}
                     accessibilityRole="button"
-                    accessibilityLabel={`${meeting.title}, ${formatMeetingDate(meeting.meetingDate)}, ${formatDuration(meeting.durationSec)}`}
+                    accessibilityLabel={`${meeting.title}, ${formatMeetingDate(meeting.meetingDate)}, ${formatDuration(meeting.durationSec)}${meeting.languages.length > 0 ? `, 사용 언어 ${meeting.languages.map((l) => LANG_BADGE[l]).join(' ')}` : ''}`}
                     accessibilityHint="회의록 상세 화면으로 이동합니다"
                   >
                     <View
@@ -239,6 +239,17 @@ export function HomeScreen() {
                           {formatDuration(meeting.durationSec)}
                         </ThemedText>
                       </View>
+                      {meeting.languages.length > 0 && (
+                        <View style={styles.langRow}>
+                          {meeting.languages.map((l) => (
+                            <View key={l} style={[styles.langBadge, { backgroundColor: colors.backgroundSelected }]}>
+                              <ThemedText type="small" style={[styles.langBadgeText, { color: colors.primary }]}>
+                                {LANG_BADGE[l]}
+                              </ThemedText>
+                            </View>
+                          ))}
+                        </View>
+                      )}
                     </View>
                     <Feather name="chevron-right" size={16} color={colors.textSecondary} />
                   </TouchableOpacity>

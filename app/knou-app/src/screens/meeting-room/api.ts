@@ -25,6 +25,20 @@ export async function fetchMessages(meetingId: number, after?: string): Promise<
   return res.json();
 }
 /**
+ * 내 진행중(IN_PROGRESS) 회의의 meetingId 조회 (없으면 null).
+ * 웹소켓 재연결 시, 끊긴 사이 개설자가 종료해 STOMP 종료(status) 이벤트를 놓쳤는지 확인하는 용도.
+ * (종료 브로드캐스트는 일회성이라 끊긴 참여자는 복구 경로가 없음 → 재연결 시 이걸로 보정)
+ * GET /api/meetings/active
+ */
+export async function fetchActiveMeetingId(): Promise<number | null> {
+  const res = await fetch(`${API_BASE}/api/meetings/active`, { headers: authHeaders() });
+  if (res.status === 204) return null;
+  if (!res.ok) throw new Error(`진행중 회의 조회 실패 (${res.status})`);
+  const room = await res.json();
+  return typeof room?.meetingId === 'number' ? room.meetingId : null;
+}
+
+/**
  * 회의 종료. 개설자만 종료 가능(서버에서 개설여부 검증). (화면정의서 5-a-1)
  * POST /api/meetings/{meetingId}/end
  */
