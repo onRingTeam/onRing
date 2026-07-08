@@ -10,7 +10,7 @@ import { MeetingSocket } from '@/lib/websocket';
 import { MeshVoiceCall } from '@/lib/webrtc/mesh-voice-call';
 import { endMeeting as endMeetingApi } from './api';
 import { LiveStt } from '@/lib/stt/live-stt';
-import { fetchMessages } from './api';
+import { fetchActiveMeetingId, fetchMessages } from './api';
 
 /**
  * 음성통화 권한 요청 (iOS는 getUserMedia 시 네이티브 팝업 자동).
@@ -110,6 +110,14 @@ export function useMeetingConnection(
             }
           })
           .catch((e) => console.warn('[chat] 놓친 메시지 복구 실패', e));
+
+        // 끊긴 사이 개설자가 종료해 STOMP 종료(status) 이벤트를 놓쳤을 수 있으니 재확인.
+        // 내 진행중 회의가 이 회의가 아니면(=종료됨) 로컬 종료 처리. 조회 실패 시엔 오탐 방지로 무시.
+        void fetchActiveMeetingId()
+          .then((activeId) => {
+            if (activeId !== meetingId) onMeetingEndedRef.current?.();
+          })
+          .catch((e) => console.warn('[meeting] 종료 여부 재확인 실패', e));
 
         // 회의 입장 시 음성통화(WebRTC) + 내 발화 STT 자동 시작. 마이크 권한 필요.
         if (await ensureMicPermission()) {
