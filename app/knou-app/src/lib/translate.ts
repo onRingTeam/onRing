@@ -23,6 +23,17 @@ export function detectLang(text: string): LangCode {
   return 'en';
 }
 
+
+// TODO :: 외국어 번역 static 메소드
+/**import { translate } from '@/lib/translate';
+ * 기본: 문장 + 번역할 언어 (원본 언어는 자동 감지)
+ * const ja = await translate('내일까지 자료 확인해주세요', 'ja');
+ * 
+ * 원본 언어를 알면 명시 (감지 생략, 더 정확)
+ * const ko = await translate('Hello everyone', 'ko', 'en');
+ * 
+ */
+
 /**
  * 온디바이스 번역 (Google ML Kit — 오프라인, 무과금). 어디서든 import 해서 사용.
  * 모델 미보유 시 자동 다운로드(언어당 ~30MB, 1회). 실패하면 null — 호출부는 원문 폴백.
