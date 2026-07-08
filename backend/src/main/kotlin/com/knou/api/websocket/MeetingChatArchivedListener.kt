@@ -64,11 +64,11 @@ class MeetingChatArchivedListener(
         messages: List<MeetingMessageResponse>,
     ): MeetingSummaryResult {
         return try {
-            geminiClient.summarizeMeeting(context.title, context.attendees, messages)
+            geminiClient.summarizeMeeting(context.attendees, messages)
         } catch (e: Exception) {
             log.warn("[chat-archive] 회의 {} 요약 1차 실패, 재시도: {}", meetingId, e.message)
             Thread.sleep(2_000)
-            geminiClient.summarizeMeeting(context.title, context.attendees, messages)
+            geminiClient.summarizeMeeting(context.attendees, messages)
         }
     }
 }
