@@ -43,7 +43,7 @@ class MeetingSummaryServiceTest {
         val m = meeting(1)
         val a1 = attendance(m, user(10, "고윤아"))
         val a2 = attendance(m, user(20, "김철수"))
-        whenever(meetingRepository.findById(1)).thenReturn(Optional.of(m))
+        whenever(meetingRepository.existsById(1)).thenReturn(true)
         whenever(attendanceRepository.findAllByMeeting_MeetingId(1)).thenReturn(listOf(a1, a2))
 
         val messages = listOf(
@@ -57,7 +57,6 @@ class MeetingSummaryServiceTest {
 
         assertEquals(2, a1.speechCount)
         assertEquals(1, a2.speechCount)
-        assertEquals("주간 회의", ctx.title)
         assertEquals(listOf(10L, 20L), ctx.attendees.map { it.userId })
     }
 
