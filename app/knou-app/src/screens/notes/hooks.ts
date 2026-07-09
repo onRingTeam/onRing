@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { MeetingListItem } from '@/types/meeting';
-import { deleteMeetings, fetchMeetingDetail, fetchMeetings, toggleFavorite } from './api';
+import {
+  deleteMeetings,
+  fetchMeetingDetail,
+  fetchMeetingTranscript,
+  fetchMeetings,
+  toggleFavorite,
+} from './api';
 
 export interface UseMeetingsOptions {
   keyword: string;
@@ -39,6 +45,19 @@ export function useMeetingDetail(meetingId: number, options?: { waitForSummary?:
       if (query.state.dataUpdateCount >= SUMMARY_POLL_MAX) return false; // 상한 → 포기
       return SUMMARY_POLL_INTERVAL_MS;
     },
+  });
+}
+
+/**
+ * 상세회의 - 전체 대화 쿼리. 종료 회의의 대화는 불변이므로 staleTime 무한.
+ * @param options.enabled 전체 대화 탭 진입 시에만 조회하도록 lazy 하게 켠다.
+ */
+export function useMeetingTranscript(meetingId: number, options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: ['meeting-transcript', meetingId],
+    queryFn: () => fetchMeetingTranscript(meetingId),
+    enabled: Number.isFinite(meetingId) && (options?.enabled ?? true),
+    staleTime: Infinity,
   });
 }
 

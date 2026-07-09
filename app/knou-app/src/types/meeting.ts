@@ -167,3 +167,18 @@ export interface MeetingDetail {
   summary: string | null;
   speakers: SpeakerStat[];
 }
+
+/**
+ * 전체 대화 메시지 — 백엔드 `MeetingMessageResponse`와 1:1.
+ * 종료 회의 조회(GET /transcript)와 진행중 회의 버퍼 복구(GET /messages)가 공유.
+ * (화면정의서 4-d)
+ */
+export interface MeetingMessageDto {
+  messageId: number;
+  userId: number;
+  speakerName: string;
+  /** ISO LocalDateTime 문자열 (예: "2026-06-26T14:05:12") */
+  spokenAt: string;
+  original: string;
+  translated: string | null;
+}

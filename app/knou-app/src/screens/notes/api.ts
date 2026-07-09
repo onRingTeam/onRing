@@ -1,4 +1,4 @@
-import type { MeetingDetail, MeetingListItem } from '@/types/meeting';
+import type { MeetingDetail, MeetingListItem, MeetingMessageDto } from '@/types/meeting';
 import { API_BASE } from '@/lib/config';
 import { authHeaders } from '@/lib/api-headers';
 
@@ -43,6 +43,18 @@ export async function fetchMeetingDetail(meetingId: number): Promise<MeetingDeta
     headers: { ...authHeaders() },
   });
   if (!res.ok) throw new Error(`상세회의 조회 실패 (${res.status})`);
+  return res.json();
+}
+
+/**
+ * 상세회의 - 전체 대화 (종료 회의). 저장된 발화 기록을 시간순으로 반환. (화면정의서 4-d)
+ * GET /api/meetings/{meetingId}/transcript
+ */
+export async function fetchMeetingTranscript(meetingId: number): Promise<MeetingMessageDto[]> {
+  const res = await fetch(`${API_BASE}/api/meetings/${meetingId}/transcript`, {
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) throw new Error(`전체 대화 조회 실패 (${res.status})`);
   return res.json();
 }
 
