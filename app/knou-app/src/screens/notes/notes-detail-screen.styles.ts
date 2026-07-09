@@ -48,6 +48,20 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.half,
   },
+  tabRow: {
+    flexDirection: 'row',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: Spacing.half,
+    gap: Spacing.half,
+  },
+  tabBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.two,
+    borderRadius: 12,
+  },
   statValue: {
     marginTop: Spacing.half,
   },

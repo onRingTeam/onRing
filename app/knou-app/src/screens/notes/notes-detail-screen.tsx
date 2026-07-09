@@ -1,4 +1,5 @@
 // 1. Import
+import { useState } from 'react';
 import { ScrollView, View, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -8,8 +9,9 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { formatDuration, formatMeetingDate } from '@/utils/meeting-format';
-import { useMeetingDetail } from './hooks';
+import { useMeetingDetail, useMeetingTranscript } from './hooks';
 import { SummaryTab } from './components/summary-tab';
+import { TranscriptTab } from './components/transcript-tab';
 import { styles } from './notes-detail-screen.styles';
 
 export interface NotesDetailScreenProps {
@@ -18,6 +20,13 @@ export interface NotesDetailScreenProps {
   waitForSummary?: boolean;
 }
 
+type DetailTab = 'summary' | 'transcript';
+
+const TABS: { key: DetailTab; label: string }[] = [
+  { key: 'summary', label: 'AI 요약' },
+  { key: 'transcript', label: '전체 대화' },
+];
+
 // 2. 페이지(함수) 시작
 export function NotesDetailScreen({ id, waitForSummary = false }: NotesDetailScreenProps) {
   const scheme = useColorScheme();
@@ -25,7 +34,14 @@ export function NotesDetailScreen({ id, waitForSummary = false }: NotesDetailScr
   const router = useRouter();
 
   const meetingId = Number(id);
+  const [tab, setTab] = useState<DetailTab>('summary');
   const { data: detail, isLoading, isError } = useMeetingDetail(meetingId, { waitForSummary });
+  // 전체 대화 탭 진입 시에만 조회 (lazy). 종료 회의 대화는 불변이라 한 번만 받아 캐시.
+  const {
+    data: transcript,
+    isLoading: transcriptLoading,
+    isError: transcriptError,
+  } = useMeetingTranscript(meetingId, { enabled: !!detail && tab === 'transcript' });
   // 요약이 아직 없고 폴링 중(방금 종료) → '생성 중' 표시 (상한 도달 시 refetchInterval 이 멈추면서 자연히 해제).
   const summaryPending = waitForSummary && !detail?.summary;
 
@@ -93,7 +109,39 @@ export function NotesDetailScreen({ id, waitForSummary = false }: NotesDetailScr
               ))}
             </View>
 
-            <SummaryTab detail={detail} summaryPending={summaryPending} />
+            {/* 세그먼트 탭 (AI 요약 / 전체 대화) */}
+            <View style={[styles.tabRow, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+              {TABS.map((t) => {
+                const selected = tab === t.key;
+                return (
+                  <TouchableOpacity
+                    key={t.key}
+                    style={[styles.tabBtn, selected && { backgroundColor: colors.backgroundSelected }]}
+                    activeOpacity={0.7}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected }}
+                    onPress={() => setTab(t.key)}
+                  >
+                    <ThemedText
+                      type={selected ? 'smallBold' : 'small'}
+                      style={{ color: selected ? colors.accent : colors.textSecondary }}
+                    >
+                      {t.label}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {tab === 'summary' ? (
+              <SummaryTab detail={detail} summaryPending={summaryPending} />
+            ) : (
+              <TranscriptTab
+                messages={transcript ?? []}
+                isLoading={transcriptLoading}
+                isError={transcriptError}
+              />
+            )}
           </ScrollView>
         )}
       </SafeAreaView>
