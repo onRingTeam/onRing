@@ -1,5 +1,6 @@
 // 1. Import
-import { ActivityIndicator, ScrollView, View, TouchableOpacity } from 'react-native';
+import { useState } from 'react';
+import { ScrollView, View, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -8,7 +9,9 @@ import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { formatDuration, formatMeetingDate } from '@/utils/meeting-format';
-import { useMeetingDetail } from './hooks';
+import { useMeetingDetail, useMeetingTranscript } from './hooks';
+import { SummaryTab } from './components/summary-tab';
+import { TranscriptTab } from './components/transcript-tab';
 import { styles } from './notes-detail-screen.styles';
 
 export interface NotesDetailScreenProps {
@@ -17,8 +20,12 @@ export interface NotesDetailScreenProps {
   waitForSummary?: boolean;
 }
 
-/** 화자 구분용 색상 팔레트 (발화 통계 바). */
-const SPEAKER_COLORS = ['#1A3461', '#2D67C8', '#4A90D9', '#7DB0E8', '#A9CCEF'];
+type DetailTab = 'summary' | 'transcript';
+
+const TABS: { key: DetailTab; label: string }[] = [
+  { key: 'summary', label: 'AI 요약' },
+  { key: 'transcript', label: '전체 대화' },
+];
 
 // 2. 페이지(함수) 시작
 export function NotesDetailScreen({ id, waitForSummary = false }: NotesDetailScreenProps) {
@@ -27,7 +34,14 @@ export function NotesDetailScreen({ id, waitForSummary = false }: NotesDetailScr
   const router = useRouter();
 
   const meetingId = Number(id);
+  const [tab, setTab] = useState<DetailTab>('summary');
   const { data: detail, isLoading, isError } = useMeetingDetail(meetingId, { waitForSummary });
+  // 전체 대화 탭 진입 시에만 조회 (lazy). 종료 회의 대화는 불변이라 한 번만 받아 캐시.
+  const {
+    data: transcript,
+    isLoading: transcriptLoading,
+    isError: transcriptError,
+  } = useMeetingTranscript(meetingId, { enabled: !!detail && tab === 'transcript' });
   // 요약이 아직 없고 폴링 중(방금 종료) → '생성 중' 표시 (상한 도달 시 refetchInterval 이 멈추면서 자연히 해제).
   const summaryPending = waitForSummary && !detail?.summary;
 
@@ -39,7 +53,6 @@ export function NotesDetailScreen({ id, waitForSummary = false }: NotesDetailScr
         { label: '총 회의시간', value: formatDuration(detail.durationSec), icon: 'clock' as const },
       ]
     : [];
-  const actionItems = detail?.speakers.filter((s) => !!s.actionItem) ?? [];
 
   // 4. Return
   return (
@@ -96,90 +109,39 @@ export function NotesDetailScreen({ id, waitForSummary = false }: NotesDetailScr
               ))}
             </View>
 
-            {/* 요약 내용 */}
-            <View style={[styles.card, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
-              <ThemedText type="smallBold">요약 내용</ThemedText>
-              {detail.summary ? (
-                <ThemedText type="small" themeColor="text" style={styles.summaryText}>
-                  {detail.summary}
-                </ThemedText>
-              ) : summaryPending ? (
-                <View style={styles.summaryPending}>
-                  <ActivityIndicator size="small" color={colors.accent} />
-                  <ThemedText type="small" themeColor="textSecondary">
-                    AI 요약 생성 중...
-                  </ThemedText>
-                </View>
-              ) : (
-                <ThemedText type="small" themeColor="textSecondary" style={styles.summaryText}>
-                  AI 요약이 아직 없습니다.
-                </ThemedText>
-              )}
+            {/* 세그먼트 탭 (AI 요약 / 전체 대화) */}
+            <View style={[styles.tabRow, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
+              {TABS.map((t) => {
+                const selected = tab === t.key;
+                return (
+                  <TouchableOpacity
+                    key={t.key}
+                    style={[styles.tabBtn, selected && { backgroundColor: colors.backgroundSelected }]}
+                    activeOpacity={0.7}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected }}
+                    onPress={() => setTab(t.key)}
+                  >
+                    <ThemedText
+                      type={selected ? 'smallBold' : 'small'}
+                      style={{ color: selected ? colors.accent : colors.textSecondary }}
+                    >
+                      {t.label}
+                    </ThemedText>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
-            {/* 액션 아이템 */}
-            <View style={[styles.card, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
-              <ThemedText type="smallBold">액션 아이템</ThemedText>
-              {actionItems.length === 0 ? (
-                <ThemedText type="small" themeColor="textSecondary">
-                  액션 아이템이 아직 없습니다.
-                </ThemedText>
-              ) : (
-                actionItems.map((s, i) => (
-                  <View key={s.userId} style={[styles.actionItem, { borderTopColor: colors.border }, i === 0 && styles.actionItemFirst]}>
-                    <View style={[styles.actionIndex, { backgroundColor: colors.primaryLight }]}>
-                      <ThemedText type="small" style={[styles.actionIndexText, { color: colors.primary }]}>
-                        {i + 1}
-                      </ThemedText>
-                    </View>
-                    <View style={styles.actionBody}>
-                      <ThemedText type="small" style={[styles.actionWho, { color: colors.accent }]}>
-                        {s.name}
-                      </ThemedText>
-                      <ThemedText type="small" themeColor="textSecondary" style={styles.actionWhat}>
-                        {s.actionItem}
-                      </ThemedText>
-                    </View>
-                  </View>
-                ))
-              )}
-            </View>
-
-            {/* 화자별 발화 */}
-            <View style={[styles.card, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}>
-              <ThemedText type="smallBold">화자별 발화</ThemedText>
-              {detail.speakers.length === 0 ? (
-                <ThemedText type="small" themeColor="textSecondary">
-                  발화 기록이 아직 없습니다.
-                </ThemedText>
-              ) : (
-                detail.speakers.map((s, i) => {
-                  const color = SPEAKER_COLORS[i % SPEAKER_COLORS.length];
-                  return (
-                    <View key={s.userId} style={styles.speakerRow}>
-                      <View style={styles.speakerHead}>
-                        <View style={styles.speakerNameWrap}>
-                          <View style={[styles.speakerDot, { backgroundColor: color }]}>
-                            <ThemedText type="small" style={styles.speakerInitial}>
-                              {s.name.charAt(0)}
-                            </ThemedText>
-                          </View>
-                          <ThemedText type="small">{s.name}</ThemedText>
-                        </View>
-                        <ThemedText type="small" themeColor="textSecondary" style={styles.speakerCount}>
-                          {s.speechCount}회 ({Math.round(s.speechRatio)}%)
-                        </ThemedText>
-                      </View>
-                      <View style={[styles.speakerTrack, { backgroundColor: colors.backgroundSelected }]}>
-                        <View
-                          style={[styles.speakerFill, { width: `${Math.min(100, s.speechRatio)}%`, backgroundColor: color }]}
-                        />
-                      </View>
-                    </View>
-                  );
-                })
-              )}
-            </View>
+            {tab === 'summary' ? (
+              <SummaryTab detail={detail} summaryPending={summaryPending} />
+            ) : (
+              <TranscriptTab
+                messages={transcript ?? []}
+                isLoading={transcriptLoading}
+                isError={transcriptError}
+              />
+            )}
           </ScrollView>
         )}
       </SafeAreaView>

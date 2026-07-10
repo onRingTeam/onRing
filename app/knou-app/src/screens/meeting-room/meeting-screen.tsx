@@ -39,21 +39,27 @@ export function MeetingScreen() {
   const { data: profile } = useProfile();
   const [selectedLang, setSelectedLang] = useState<LangCode | null>(null);
   const myLang: LangCode = selectedLang ?? (profile ? fromBackendLang(profile.language) : 'ko');
-  // 종료 후 store가 비워지면 아래 자동시작 effect가 재실행돼 회의가 되살아나는 것을 막는 가드.
-  const startedRef = useRef(false);
+  // 이미 세션을 시작한 회의 id. 새 meetingId 로 들어오면 세션(자막·참여자·타이머)을 새로 초기화한다.
+  const startedMeetingRef = useRef<number | null>(null);
   const streamRef = useRef<ScrollView>(null);
+  // 로컬 종료 처리를 1회만 실행하기 위한 가드. 회의 탭 화면은 회의가 바뀌어도 언마운트되지 않으므로
+  // (ref 가 유지됨) 새 회의 진입 시 아래 effect 에서 반드시 false 로 초기화해야 종료 버튼이 되살아난다.
+  const endedRef = useRef(false);
 
-  // 실제 회의(meetingId 있음)로 들어온 경우에만 세션 시작 (mount당 1회). 회의 탭 직접 진입 = 가짜 회의 방지.
+  // 실제 회의(meetingId 있음)로 진입 시 세션 시작. 같은 방에선 1회, 다른 방으로 바뀌면 재초기화한다.
+  // captions 는 방별로 구분되지 않는 전역 상태라, 여기서 meetingId 가 바뀔 때마다 비워야
+  // 이전 회의가 깔끔히 정리되지 않았어도(=inMeeting 잔존) 새 방에 옛 자막이 남지 않는다.
+  // meetingId 기준이라 종료 후 store 가 비워져도(같은 id) 재실행되지 않아 회의가 되살아나지 않는다.
   useEffect(() => {
-    if (meetingId !== null && !inMeeting && !startedRef.current) {
-      startedRef.current = true;
+    if (meetingId !== null && startedMeetingRef.current !== meetingId) {
+      startedMeetingRef.current = meetingId;
+      endedRef.current = false; // 새 방은 아직 종료되지 않음 — 유지된 화면의 이전 종료 가드 초기화
       startMeeting(code ?? '');
     }
-  }, [meetingId, inMeeting, code, startMeeting]);
+  }, [meetingId, code, startMeeting]);
 
   // 로컬 종료 처리(스토어 정리 + 요약 화면 이동). 내가 종료했든 개설자 종료 알림을 받았든 공통.
-  // STOMP 알림과 내 종료가 겹쳐도 1회만 실행되도록 가드.
-  const endedRef = useRef(false);
+  // STOMP 알림과 내 종료가 겹쳐도 1회만 실행되도록 endedRef 로 가드한다.
   const finishLocally = (remote = false) => {
     if (endedRef.current) return;
     endedRef.current = true;
@@ -107,16 +113,30 @@ export function MeetingScreen() {
     });
   };
 
-  const handleEnd = async () => {
-    // 서버에 회의 종료 요청 (개설자만 성공, 그 외 403은 무시하고 로컬 정리).
-    if (meetingId !== null) {
-      try {
-        await endMutation.mutateAsync(meetingId);
-      } catch (e) {
-        console.warn('[meeting] 종료 실패(개설자 아님이거나 이미 종료)', e);
-      }
-    }
-    finishLocally();
+  const handleEnd = () => {
+    // 개설자 종료: 확인 알럿 → 확인 시 곧바로 상세(요약/전체 대화)로 이동하고,
+    //  - 스토어 정리(finishLocally) + 서버 종료 API 호출을 함께 수행한다.
+    //  - 서버는 참여자들에게 ENDED 를 브로드캐스트하고(→ 참여자는 finishLocally(true) 로 알럿+이동),
+    //    회의 요약·전체 대화를 저장한다.
+    Alert.alert(
+      '회의를 종료할까요?',
+      '종료하면 회의 요약과 전체 대화를 확인할 수 있어요.',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '종료',
+          style: 'destructive',
+          onPress: () => {
+            finishLocally(); // 스토어 정리 + 상세로 즉시 이동 (endedRef 선점으로 되돌아오는 ENDED 무시)
+            if (meetingId !== null) {
+              endMutation.mutate(meetingId, {
+                onError: (e) => console.warn('[meeting] 종료 실패(개설자 아님이거나 이미 종료)', e),
+              });
+            }
+          },
+        },
+      ],
+    );
   };
 
   // presence가 오기 전에도 본인은 항상 보이도록 (서버 목록에 내 이름 있으면 중복 제거)

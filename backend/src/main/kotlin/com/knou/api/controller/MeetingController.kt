@@ -11,6 +11,7 @@ import com.knou.api.dto.meeting.MeetingListItemResponse
 import com.knou.api.dto.meeting.MeetingMessageResponse
 import com.knou.api.dto.meeting.MeetingRoomResponse
 import com.knou.api.service.MeetingService
+import com.knou.api.service.MeetingTranscriptService
 import com.knou.api.websocket.MeetingStatusEvent
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
@@ -41,6 +42,7 @@ import java.time.LocalDateTime
 @RequestMapping("/api/meetings")
 class MeetingController(
     private val meetingService: MeetingService,
+    private val transcriptService: MeetingTranscriptService,
     private val messagingTemplate: SimpMessagingTemplate,
 ) {
 
@@ -108,9 +110,10 @@ class MeetingController(
     }
 
     @Operation(
-        summary = "상세회의 - 전체 대화",
-        description = "발화자·시간·원문·번역 메시지 목록. (화면 4-d) " +
-            "after 지정 시 해당 시각 이후만 반환 — 웹소켓 재연결 시 놓친 메시지 복구용.",
+        summary = "진행중 회의 - 놓친 메시지 복구",
+        description = "진행중 회의의 인메모리 버퍼에서 메시지를 조회한다. " +
+            "after 지정 시 해당 시각 이후만 반환 — 웹소켓 재연결 시 놓친 메시지 복구용. " +
+            "종료된 회의의 전체 대화는 GET /transcript 를 사용한다.",
     )
     @GetMapping("/{meetingId}/messages")
     fun getMeetingMessages(
@@ -122,6 +125,19 @@ class MeetingController(
         after: LocalDateTime?,
     ): ResponseEntity<List<MeetingMessageResponse>> {
         return ResponseEntity.ok(meetingService.messages(meetingId, after))
+    }
+
+    @Operation(
+        summary = "상세회의 - 전체 대화",
+        description = "종료된 회의의 저장된 전체 대화를 시간순으로 반환한다. " +
+            "발화자·시간·원문·번역 메시지 목록. (화면 4-d)",
+    )
+    @GetMapping("/{meetingId}/transcript")
+    fun getMeetingTranscript(
+        @RequestHeader("X-User-Id") userId: Long,
+        @PathVariable meetingId: Long,
+    ): ResponseEntity<List<MeetingMessageResponse>> {
+        return ResponseEntity.ok(transcriptService.transcript(meetingId))
     }
 
     @Operation(summary = "즐겨찾기 토글", description = "회의 즐겨찾기 여부를 토글한다. (화면 3-c, 3-d)")

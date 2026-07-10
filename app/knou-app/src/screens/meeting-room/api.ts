@@ -1,15 +1,8 @@
 import { API_BASE } from '@/lib/config';
 import { authHeaders } from '@/lib/api-headers';
+import type { MeetingMessageDto } from '@/types/meeting';
 
-/** GET /api/meetings/{id}/messages 응답 항목 (서버 MeetingMessageResponse). */
-export interface MeetingMessageDto {
-  messageId: number;
-  userId: number;
-  speakerName: string;
-  spokenAt: string;
-  original: string;
-  translated: string | null;
-}
+export type { MeetingMessageDto };
 
 /**
  * 놓친 채팅 메시지 조회 (시간순). 서버 인메모리 버퍼 — 진행중 회의만, 종료 시 폐기됨.
