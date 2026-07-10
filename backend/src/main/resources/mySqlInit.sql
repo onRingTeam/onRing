@@ -10,7 +10,8 @@
  *    - 회의 참석 ID [PK] / 회의 ID [FK] / 회원 ID [FK] / 즐겨찾기 여부(Y/N)
  *      / 사용 여부(Y/N, 사용자별 회의록 삭제) / 액션아이템 / 발화빈도수 / 번역 언어 / BM ID / 개설여부(Y/N)
  *  회의 대화(meeting_message)
- *    - 메시지 ID [PK] / 회의 ID [FK] / 발화자 회원 ID / 발화자명 / 발화 시각 / 원문 / 번역문
+ *    - 메시지 ID [PK] / 회의 ID [FK] / 발화자 회원 ID / 발화자명(sender_name) / 발화 시각(sent_at)
+ *      / 발화 텍스트(message) / 원문 언어(lang) / 번역문(translated)
  *      (종료된 회의의 전체 대화 조회용 — 상세회의 '전체 대화' 탭)
  * ========================================================================= */
 
@@ -135,13 +136,14 @@ CREATE TABLE meeting_message (
     message_id   BIGINT       NOT NULL AUTO_INCREMENT COMMENT '메시지 ID',
     meeting_id   BIGINT       NOT NULL                COMMENT '회의 ID',
     user_id      BIGINT       NOT NULL                COMMENT '발화자 회원 ID (FK 아님 — 참석 기록 없는 발화자도 허용)',
-    speaker_name VARCHAR(100) NOT NULL                COMMENT '발화자명 (발화 시점 비정규화)',
-    spoken_at    DATETIME     NOT NULL                COMMENT '발화 시각',
-    original     TEXT         NOT NULL                COMMENT '원문',
+    sender_name  VARCHAR(100) NOT NULL                COMMENT '발화자명 (발화 시점 비정규화)',
+    sent_at      DATETIME     NOT NULL                COMMENT '발화 시각',
+    message      TEXT         NOT NULL                COMMENT '발화 텍스트(원문)',
+    lang         VARCHAR(30)  NULL                    COMMENT '원문 언어 (현재 미사용 — 번역 기능 대비)',
     translated   TEXT         NULL                    COMMENT '번역문 (현재 미사용 — 번역 기능 대비)',
     created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성일시',
     PRIMARY KEY (message_id),
-    KEY idx_meeting_message_meeting_spoken (meeting_id, spoken_at),
+    KEY idx_message_meeting_sent (meeting_id, sent_at),
     CONSTRAINT fk_meeting_message_meeting FOREIGN KEY (meeting_id) REFERENCES meeting (meeting_id)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
