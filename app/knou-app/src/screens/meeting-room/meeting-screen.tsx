@@ -42,6 +42,9 @@ export function MeetingScreen() {
   // 이미 세션을 시작한 회의 id. 새 meetingId 로 들어오면 세션(자막·참여자·타이머)을 새로 초기화한다.
   const startedMeetingRef = useRef<number | null>(null);
   const streamRef = useRef<ScrollView>(null);
+  // 로컬 종료 처리를 1회만 실행하기 위한 가드. 회의 탭 화면은 회의가 바뀌어도 언마운트되지 않으므로
+  // (ref 가 유지됨) 새 회의 진입 시 아래 effect 에서 반드시 false 로 초기화해야 종료 버튼이 되살아난다.
+  const endedRef = useRef(false);
 
   // 실제 회의(meetingId 있음)로 진입 시 세션 시작. 같은 방에선 1회, 다른 방으로 바뀌면 재초기화한다.
   // captions 는 방별로 구분되지 않는 전역 상태라, 여기서 meetingId 가 바뀔 때마다 비워야
@@ -50,13 +53,13 @@ export function MeetingScreen() {
   useEffect(() => {
     if (meetingId !== null && startedMeetingRef.current !== meetingId) {
       startedMeetingRef.current = meetingId;
+      endedRef.current = false; // 새 방은 아직 종료되지 않음 — 유지된 화면의 이전 종료 가드 초기화
       startMeeting(code ?? '');
     }
   }, [meetingId, code, startMeeting]);
 
   // 로컬 종료 처리(스토어 정리 + 요약 화면 이동). 내가 종료했든 개설자 종료 알림을 받았든 공통.
-  // STOMP 알림과 내 종료가 겹쳐도 1회만 실행되도록 가드.
-  const endedRef = useRef(false);
+  // STOMP 알림과 내 종료가 겹쳐도 1회만 실행되도록 endedRef 로 가드한다.
   const finishLocally = (remote = false) => {
     if (endedRef.current) return;
     endedRef.current = true;
