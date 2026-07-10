@@ -114,16 +114,29 @@ export function MeetingScreen() {
   };
 
   const handleEnd = () => {
-    // 내가 누른 종료 — 로컬 정리+상세 이동을 먼저 확정한다(endedRef 선점).
-    // POST /end 응답보다 서버의 종료(ENDED) 브로드캐스트가 내 소켓으로 먼저 되돌아와도
-    // '참여자용 종료 알럿'(finishLocally(true)) 경로를 타지 않고 곧바로 상세로 이동한다.
-    finishLocally();
-    // 서버 종료 요청은 백그라운드로 (개설자만 성공, 그 외/이미 종료는 무시하고 로컬은 이미 정리됨).
-    if (meetingId !== null) {
-      endMutation.mutate(meetingId, {
-        onError: (e) => console.warn('[meeting] 종료 실패(개설자 아님이거나 이미 종료)', e),
-      });
-    }
+    // 개설자 종료: 확인 알럿 → 확인 시 곧바로 상세(요약/전체 대화)로 이동하고,
+    //  - 스토어 정리(finishLocally) + 서버 종료 API 호출을 함께 수행한다.
+    //  - 서버는 참여자들에게 ENDED 를 브로드캐스트하고(→ 참여자는 finishLocally(true) 로 알럿+이동),
+    //    회의 요약·전체 대화를 저장한다.
+    Alert.alert(
+      '회의를 종료할까요?',
+      '종료하면 회의 요약과 전체 대화를 확인할 수 있어요.',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '종료',
+          style: 'destructive',
+          onPress: () => {
+            finishLocally(); // 스토어 정리 + 상세로 즉시 이동 (endedRef 선점으로 되돌아오는 ENDED 무시)
+            if (meetingId !== null) {
+              endMutation.mutate(meetingId, {
+                onError: (e) => console.warn('[meeting] 종료 실패(개설자 아님이거나 이미 종료)', e),
+              });
+            }
+          },
+        },
+      ],
+    );
   };
 
   // presence가 오기 전에도 본인은 항상 보이도록 (서버 목록에 내 이름 있으면 중복 제거)
