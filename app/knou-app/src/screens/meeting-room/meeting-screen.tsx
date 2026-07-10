@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -163,21 +163,29 @@ export function MeetingScreen() {
 
       <LanguageBar selected={myLang} onSelect={setSelectedLang} />
 
-      <ScrollView
-        ref={streamRef}
-        style={styles.stream}
-        contentContainerStyle={styles.streamContent}
-        showsVerticalScrollIndicator={false}
-        onContentSizeChange={() => streamRef.current?.scrollToEnd({ animated: true })}
+      {/* 입력창이 키보드에 가리지 않도록 키보드 높이만큼 하단을 밀어올린다.
+          (Android edge-to-edge 에선 adjustResize 가 자동으로 밀지 않으므로 필요) */}
+      <KeyboardAvoidingView
+        style={styles.avoider}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <CaptionStream captions={captions} />
-      </ScrollView>
+        <ScrollView
+          ref={streamRef}
+          style={styles.stream}
+          contentContainerStyle={styles.streamContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          onContentSizeChange={() => streamRef.current?.scrollToEnd({ animated: true })}
+        >
+          <CaptionStream captions={captions} />
+        </ScrollView>
 
-      <SafeAreaView edges={['bottom']} style={styles.footer}>
-        <View style={styles.footerInner}>
-          <ChatInputBar onSend={handleSend} onMicToggle={setMicEnabled} />
-        </View>
-      </SafeAreaView>
+        <SafeAreaView edges={['bottom']} style={styles.footer}>
+          <View style={styles.footerInner}>
+            <ChatInputBar onSend={handleSend} onMicToggle={setMicEnabled} />
+          </View>
+        </SafeAreaView>
+      </KeyboardAvoidingView>
     </ThemedView>
   );
 }
@@ -229,6 +237,7 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.two,
   },
   emptyBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 15 },
+  avoider: { flex: 1 },
   stream: { flex: 1 },
   streamContent: {
     paddingHorizontal: Spacing.four,
