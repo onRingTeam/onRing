@@ -39,17 +39,20 @@ export function MeetingScreen() {
   const { data: profile } = useProfile();
   const [selectedLang, setSelectedLang] = useState<LangCode | null>(null);
   const myLang: LangCode = selectedLang ?? (profile ? fromBackendLang(profile.language) : 'ko');
-  // 종료 후 store가 비워지면 아래 자동시작 effect가 재실행돼 회의가 되살아나는 것을 막는 가드.
-  const startedRef = useRef(false);
+  // 이미 세션을 시작한 회의 id. 새 meetingId 로 들어오면 세션(자막·참여자·타이머)을 새로 초기화한다.
+  const startedMeetingRef = useRef<number | null>(null);
   const streamRef = useRef<ScrollView>(null);
 
-  // 실제 회의(meetingId 있음)로 들어온 경우에만 세션 시작 (mount당 1회). 회의 탭 직접 진입 = 가짜 회의 방지.
+  // 실제 회의(meetingId 있음)로 진입 시 세션 시작. 같은 방에선 1회, 다른 방으로 바뀌면 재초기화한다.
+  // captions 는 방별로 구분되지 않는 전역 상태라, 여기서 meetingId 가 바뀔 때마다 비워야
+  // 이전 회의가 깔끔히 정리되지 않았어도(=inMeeting 잔존) 새 방에 옛 자막이 남지 않는다.
+  // meetingId 기준이라 종료 후 store 가 비워져도(같은 id) 재실행되지 않아 회의가 되살아나지 않는다.
   useEffect(() => {
-    if (meetingId !== null && !inMeeting && !startedRef.current) {
-      startedRef.current = true;
+    if (meetingId !== null && startedMeetingRef.current !== meetingId) {
+      startedMeetingRef.current = meetingId;
       startMeeting(code ?? '');
     }
-  }, [meetingId, inMeeting, code, startMeeting]);
+  }, [meetingId, code, startMeeting]);
 
   // 로컬 종료 처리(스토어 정리 + 요약 화면 이동). 내가 종료했든 개설자 종료 알림을 받았든 공통.
   // STOMP 알림과 내 종료가 겹쳐도 1회만 실행되도록 가드.
