@@ -110,16 +110,17 @@ export function MeetingScreen() {
     });
   };
 
-  const handleEnd = async () => {
-    // 서버에 회의 종료 요청 (개설자만 성공, 그 외 403은 무시하고 로컬 정리).
-    if (meetingId !== null) {
-      try {
-        await endMutation.mutateAsync(meetingId);
-      } catch (e) {
-        console.warn('[meeting] 종료 실패(개설자 아님이거나 이미 종료)', e);
-      }
-    }
+  const handleEnd = () => {
+    // 내가 누른 종료 — 로컬 정리+상세 이동을 먼저 확정한다(endedRef 선점).
+    // POST /end 응답보다 서버의 종료(ENDED) 브로드캐스트가 내 소켓으로 먼저 되돌아와도
+    // '참여자용 종료 알럿'(finishLocally(true)) 경로를 타지 않고 곧바로 상세로 이동한다.
     finishLocally();
+    // 서버 종료 요청은 백그라운드로 (개설자만 성공, 그 외/이미 종료는 무시하고 로컬은 이미 정리됨).
+    if (meetingId !== null) {
+      endMutation.mutate(meetingId, {
+        onError: (e) => console.warn('[meeting] 종료 실패(개설자 아님이거나 이미 종료)', e),
+      });
+    }
   };
 
   // presence가 오기 전에도 본인은 항상 보이도록 (서버 목록에 내 이름 있으면 중복 제거)
