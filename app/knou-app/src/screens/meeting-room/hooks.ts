@@ -35,6 +35,17 @@ async function ensureMicPermission(): Promise<boolean> {
   return mic === PermissionsAndroid.RESULTS.GRANTED;
 }
 
+/**
+ * 서버 sentAt 을 epoch(ms)로. 서버는 UTC 시각을 타임존 표기 없이("2026-07-11T01:47:19.253…")
+ * 보내므로 그대로 Date.parse 하면 로컬로 오해석돼 시간이 어긋난다 → Z(UTC) 를 붙여 파싱한다.
+ */
+function parseSentAt(sentAt?: string): number {
+  if (!sentAt) return Date.now();
+  const iso = /(Z|[+-]\d{2}:?\d{2})$/.test(sentAt) ? sentAt : `${sentAt}Z`;
+  const t = Date.parse(iso);
+  return Number.isNaN(t) ? Date.now() : t;
+}
+
 /** 서버 채팅 메시지(STOMP) → 화면 자막(CaptionItem) 매핑 */
 function toCaption(msg: ChatMessageResponse): CaptionItem {
   const lang = fromBackendLang(msg.lang);
@@ -43,7 +54,7 @@ function toCaption(msg: ChatMessageResponse): CaptionItem {
     speaker: { id: msg.senderName, name: msg.senderName, language: lang },
     text: msg.message,
     // TODO Phase 4-2: 서버가 수신자 언어로 번역한 translated 필드 제공 시 매핑
-    timestamp: Date.parse(msg.sentAt) || Date.now(),
+    timestamp: parseSentAt(msg.sentAt),
   };
 }
 
@@ -89,14 +100,20 @@ export function useMeetingConnection(
     // source: STT — 수신 측이 TTS 재생에서 제외 (이미 WebRTC 음성으로 들림)
     const stt = new LiveStt({
       lang: myLanguage,
-      onFinal: (text) =>
-        socket.send({ senderId, senderName, message: text, lang: toBackendLang(myLanguage), source: 'STT' }),
+      onFinal: (text) => {
+        const sentAt = new Date().toISOString();
+        // 낙관적: 내 발화는 WS 에코를 기다리지 않고 즉시 내 자막에 표시 (혼자/오프라인에서도 보임)
+        addCaption(toCaption({ senderId, senderName, message: text, lang: toBackendLang(myLanguage), sentAt, source: 'STT' }));
+        socket.send({ senderId, senderName, message: text, lang: toBackendLang(myLanguage), source: 'STT' });
+      },
     });
 
     socket.connect(meetingId, {
       joinName: senderName,
       onMessage: (msg) => {
         lastSentAtRef.current = msg.sentAt;
+        // 내 메시지는 전송 시 낙관적으로 이미 자막에 넣었으므로 에코는 건너뜀 (중복 방지)
+        if (msg.senderId === senderId) return;
         const caption = toCaption(msg);
         addCaption(caption);
 
@@ -142,10 +159,10 @@ export function useMeetingConnection(
           })
           .catch((e) => console.warn('[meeting] 종료 여부 재확인 실패', e));
 
-        // 회의 입장 시 음성통화(WebRTC) + 내 발화 STT 자동 시작. 마이크 권한 필요.
+        // 음성통화(WebRTC)는 시그널링(WS)이 필요하므로 연결 후 시작. 마이크 권한 필요.
+        // (STT는 WS와 무관 → 아래 effect 본문에서 입장 즉시 시작)
         if (await ensureMicPermission()) {
           await mesh.start().catch((e) => console.warn('[voice] start 실패', e));
-          await stt.start().catch((e) => console.warn('[stt] start 실패', e));
         } else {
           console.warn('[voice] 마이크 권한 거부됨');
         }
@@ -154,6 +171,9 @@ export function useMeetingConnection(
     socketRef.current = socket;
     meshRef.current = mesh;
     sttRef.current = stt;
+
+    // STT 는 로컬 기능 → WS 연결과 무관하게 회의 입장 즉시 시작 (권한은 LiveStt.start 내부에서 요청)
+    void stt.start().catch((e) => console.warn('[stt] start 실패', e));
 
     return () => {
       stt.stop();
@@ -166,9 +186,23 @@ export function useMeetingConnection(
     };
   }, [meetingId, senderId, senderName, myLanguage, addCaption, setCaptionTranslation, setParticipants]);
 
-  const send = useCallback((payload: ChatMessageRequest) => {
-    socketRef.current?.send(payload);
-  }, []);
+  const send = useCallback(
+    (payload: ChatMessageRequest) => {
+      socketRef.current?.send(payload);
+      // 낙관적: 내 채팅은 WS 에코를 기다리지 않고 즉시 내 자막에 표시 (혼자/오프라인에서도 보임)
+      addCaption(
+        toCaption({
+          senderId: payload.senderId,
+          senderName: payload.senderName,
+          message: payload.message,
+          lang: payload.lang ?? null,
+          sentAt: new Date().toISOString(),
+          source: payload.source,
+        }),
+      );
+    },
+    [addCaption],
+  );
 
   /** 마이크 on/off — WebRTC 송신 트랙 + 내 발화 STT 를 함께 토글 */
   const setMicEnabled = useCallback((enabled: boolean) => {

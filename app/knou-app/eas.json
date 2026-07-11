@@ -7,18 +7,36 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "channel": "development"
+      "channel": "development",
+      "env": {
+        "EXPO_PUBLIC_API_BASE": "https://devknou.shinlabs.app",
+        "EXPO_PUBLIC_WS_URL": "wss://devknou.shinlabs.app/ws",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://ncyvfmdhtvbdywnxsuuu.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_yCkRInA4nuwmbuE1AFlqFg_03TTTugj"
+      }
     },
     "preview": {
       "distribution": "internal",
       "channel": "preview",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_BASE": "https://devknou.shinlabs.app",
+        "EXPO_PUBLIC_WS_URL": "wss://devknou.shinlabs.app/ws",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://ncyvfmdhtvbdywnxsuuu.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_yCkRInA4nuwmbuE1AFlqFg_03TTTugj"
       }
     },
     "production": {
       "channel": "production",
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_BASE": "https://devknou.shinlabs.app",
+        "EXPO_PUBLIC_WS_URL": "wss://devknou.shinlabs.app/ws",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://ncyvfmdhtvbdywnxsuuu.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_yCkRInA4nuwmbuE1AFlqFg_03TTTugj"
+      }
     }
   },
   "submit": {
