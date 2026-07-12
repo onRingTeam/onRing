@@ -26,6 +26,8 @@ export function useRecentMeetings() {
 export function useHydrateActiveMeeting() {
   const setActiveMeeting = useMeetingStore((s) => s.setActiveMeeting);
   return useCallback(() => {
+    // 부팅 직후 세션 복구(backendUserId) 전에 호출되면 X-User-Id 없이 나가 400 — 스킵
+    if (useAuthStore.getState().backendUserId == null) return;
     fetchActiveMeeting()
       .then(setActiveMeeting)
       .catch((e) => console.warn('[home] 진행중 회의 동기화 실패', e));
