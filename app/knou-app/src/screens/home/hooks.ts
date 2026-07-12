@@ -2,14 +2,20 @@ import { useCallback } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import type { LangCode } from '@/types/meeting';
-import { useMeetingStore } from '@/store';
+import { useAuthStore, useMeetingStore } from '@/store';
 import { createMeeting, fetchActiveMeeting, fetchRecentMeetings, joinMeeting } from './api';
 
-/** 최근 회의 목록 조회 쿼리 (홈 노출용). */
+/**
+ * 최근 회의 목록 조회 쿼리 (홈 노출용).
+ * backendUserId 가 채워진(=인증 완료) 뒤에만 실행하고, 캐시 키에 userId 를 포함한다.
+ * (미인증 시 DEMO 사용자로 남의 회의를 조회·캐시하는 신원 혼선 방지 — [authHeaders] 참고)
+ */
 export function useRecentMeetings() {
+  const backendUserId = useAuthStore((s) => s.backendUserId);
   return useQuery({
-    queryKey: ['recent-meetings'],
+    queryKey: ['recent-meetings', backendUserId],
     queryFn: fetchRecentMeetings,
+    enabled: backendUserId != null,
   });
 }
 

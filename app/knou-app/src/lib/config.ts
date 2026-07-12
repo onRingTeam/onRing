@@ -18,6 +18,12 @@ const LOCAL_WS_URL = Platform.select({
 /** REST API base (끝 슬래시 없음). */
 export const API_BASE = process.env.EXPO_PUBLIC_API_BASE ?? LOCAL_API_BASE;
 
+/**
+ * 로컬 백엔드(localhost/10.0.2.2)를 가리키는지 여부.
+ * 배포 백엔드에서는 DEMO 사용자 폴백을 금지해(=미인증 시 X-User-Id 미전송) 타인 데이터 노출을 막는다.
+ */
+export const IS_LOCAL_BACKEND = /localhost|10\.0\.2\.2/.test(API_BASE);
+
 /** STOMP over WebSocket URL. */
 export const WS_URL = process.env.EXPO_PUBLIC_WS_URL ?? LOCAL_WS_URL;
 
