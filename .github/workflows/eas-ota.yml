@@ -6,7 +6,7 @@ name: EAS OTA Update (preview)
 on:
   push:
     branches: [dev]
-    paths: ['app/knou-app/**']
+    paths: ['app/knou-app/**', '.github/workflows/eas-ota.yml']
   workflow_dispatch:
 
 jobs:
@@ -18,9 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 로컬 개발 환경(node 24 / npm 11)과 동일하게 — package-lock 이 npm 11 기준이라
+      # npm 10(node 22)의 `npm ci` 검증이 실패함 (typescript 중첩 항목 해석 차이)
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: app/knou-app/package-lock.json
 
