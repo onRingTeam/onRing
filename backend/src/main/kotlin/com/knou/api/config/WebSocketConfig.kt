@@ -38,9 +38,10 @@ class WebSocketConfig(
     }
 
     override fun configureMessageBroker(registry: MessageBrokerRegistry) {
-        // heartbeat 10초: Cloudflare 등 프록시가 유휴(~100초) WebSocket 을 강제 종료하는 것 방지
+        // heartbeat 20초: Cloudflare 등 프록시가 유휴(~100초) WebSocket 을 강제 종료하는 것 방지.
+        //  느린 회선에서 10초 왕복이 빠듯해 잦은 재연결이 생길 수 있어 20초로 완화(유휴 100초보다 충분히 짧음).
         registry.enableSimpleBroker("/topic", "/queue")
-            .setHeartbeatValue(longArrayOf(10_000, 10_000))
+            .setHeartbeatValue(longArrayOf(20_000, 20_000))
             .setTaskScheduler(wsHeartbeatScheduler())
         registry.setApplicationDestinationPrefixes("/app")
         registry.setUserDestinationPrefix("/user")
