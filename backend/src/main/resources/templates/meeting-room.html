@@ -4,8 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <title>회의 진행</title>
-    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7/bundles/stomp.umd.min.js"></script>
+    <!-- 자체 호스팅(같은 서버). CDN 의존 제거 — 느린/오프라인 회선에서도 로드 안정화. -->
+    <script src="/vendor/sockjs.min.js"></script>
+    <script src="/vendor/stomp.umd.min.js"></script>
     <style>
         :root {
             --bg: #f5f7fb; --card: #ffffff; --ink: #16233d; --muted: #6b7a90;
@@ -89,6 +90,19 @@
 
 <script>
 'use strict';
+
+/* ── 라이브러리 로드 확인 ─────────────────────────────────────────
+   느린/끊긴 회선에서 sockjs·stompjs 가 안 받아지면 조용히 죽는 대신 안내 + 재시도. */
+if (typeof SockJS === 'undefined' || typeof StompJs === 'undefined') {
+    document.body.innerHTML =
+        '<div style="display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;'
+      + 'height:100%;padding:24px;text-align:center;font-family:-apple-system,sans-serif;color:#16233d">'
+      + '<div style="font-size:15px;font-weight:600">연결 구성요소를 불러오지 못했어요</div>'
+      + '<div style="font-size:13px;color:#6b7a90">네트워크가 느리거나 불안정할 수 있어요. 다시 시도해 주세요.</div>'
+      + '<button onclick="location.reload()" style="border:0;background:#1a3461;color:#fff;'
+      + 'font-size:14px;font-weight:600;padding:10px 20px;border-radius:10px">다시 시도</button></div>';
+    throw new Error('vendor scripts not loaded');
+}
 
 /* ── URL 파라미터 (RN WebView 가 주입) ────────────────────────────
    meetingId, code, name, userId, host(0|1), token, lang(ko|en|ja|zh) */
@@ -241,8 +255,8 @@ const client = new StompJs.Client({
     webSocketFactory: () => new SockJS('/ws'),
     connectHeaders: TOKEN ? { Authorization: 'Bearer ' + TOKEN } : {},
     reconnectDelay: 5000,
-    heartbeatIncoming: 10000,
-    heartbeatOutgoing: 10000,
+    heartbeatIncoming: 20000,
+    heartbeatOutgoing: 20000,
 });
 
 client.onConnect = () => {

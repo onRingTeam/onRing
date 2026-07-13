@@ -47,7 +47,7 @@ const MAX_PENDING_SENDS = 50;
 /** 연결 끊김 시 재연결 간격(ms). */
 const RECONNECT_DELAY = 5000;
 /** STOMP heart-beat 간격(ms) — 서버 설정과 맞춘다. 유휴 프록시(Cloudflare) 강제 종료 방지. */
-const HEARTBEAT_MS = 10_000;
+const HEARTBEAT_MS = 20_000;
 
 /** 문자열 STOMP 프레임을 UTF-8 바이트로 (RN 텍스트 프레임 NULL 누락 회피 → 바이너리 전송). */
 const encoder = typeof TextEncoder !== 'undefined' ? new TextEncoder() : null;
