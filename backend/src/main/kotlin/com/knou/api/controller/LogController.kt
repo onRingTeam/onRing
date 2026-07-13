@@ -47,7 +47,7 @@ class LogController(private val logStreamService: LogStreamService) {
         val stamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss"))
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"knou-logs-$stamp.log\"")
-            .contentType(MediaType.TEXT_PLAIN)
+            .contentType(MediaType(MediaType.TEXT_PLAIN, Charsets.UTF_8))
             .body(body)
     }
 

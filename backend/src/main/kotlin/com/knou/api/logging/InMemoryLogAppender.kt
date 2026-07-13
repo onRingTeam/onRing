@@ -57,11 +57,13 @@ object LogBuffer {
  */
 class InMemoryLogAppender : AppenderBase<ILoggingEvent>() {
 
+    // 홈서버 시스템 TZ 가 UTC 라 systemDefault 로 찍으면 9시간 어긋나 보인다 — 뷰어는 KST 고정.
     private val ts = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS")
+    private val zone = ZoneId.of("Asia/Seoul")
 
     override fun append(event: ILoggingEvent) {
         val sb = StringBuilder(160)
-        sb.append(ts.format(Instant.ofEpochMilli(event.timeStamp).atZone(ZoneId.systemDefault())))
+        sb.append(ts.format(Instant.ofEpochMilli(event.timeStamp).atZone(zone)))
             .append(' ').append("%-5s".format(event.level.toString()))
             .append(" [").append(event.threadName).append("] ")
             .append(event.loggerName).append(" - ")
