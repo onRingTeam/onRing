@@ -45,3 +45,16 @@ export async function endMeeting(meetingId: number): Promise<void> {
   });
   if (!res.ok) throw new Error(`회의 종료 실패 (${res.status})`);
 }
+
+/**
+ * 회의 나가기(참여자, "재참여 안 함"). 내 참석 레코드 use_yn=N 처리 → 진행중 회의에서 빠져
+ * 홈에서 새 회의 개설이 가능해진다. 개설자는 호출 불가(서버 403 — 종료를 사용).
+ * POST /api/meetings/{meetingId}/leave
+ */
+export async function leaveMeeting(meetingId: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/meetings/${meetingId}/leave`, {
+    method: 'POST',
+    headers: { ...authHeaders() },
+  });
+  if (!res.ok) throw new Error(`회의 나가기 실패 (${res.status})`);
+}

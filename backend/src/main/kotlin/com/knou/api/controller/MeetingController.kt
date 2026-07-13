@@ -180,6 +180,20 @@ class MeetingController(
         return ResponseEntity.noContent().build()
     }
 
+    @Operation(
+        summary = "회의 나가기",
+        description = "참여자가 진행중 회의에서 나간다(재참여 안 함). 내 참석 레코드 use_yn 을 N 으로 바꿔 " +
+            "진행중 회의·내 회의록에서 제외한다. 개설자는 나갈 수 없고 종료를 사용한다.",
+    )
+    @PostMapping("/{meetingId}/leave")
+    fun leaveMeeting(
+        @RequestHeader("X-User-Id") userId: Long,
+        @PathVariable meetingId: Long,
+    ): ResponseEntity<Void> {
+        meetingService.leave(userId, meetingId)
+        return ResponseEntity.noContent().build()
+    }
+
     @Operation(summary = "회의록 내보내기", description = "PDF/TXT로 내보낸다. AI요약/전체대화 포함 여부 선택. (화면 3-d-ii, 4-c-iii)")
     @PostMapping("/{meetingId}/export")
     fun exportMeeting(

@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <title>회의 진행</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7/bundles/stomp.umd.min.js"></script>
+    <style>
+        :root {
+            --bg: #f5f7fb; --card: #ffffff; --ink: #16233d; --muted: #6b7a90;
+            --primary: #1a3461; --primary-soft: #e8eefb; --line: rgba(26,52,97,.10);
+            --me: #1a3461; --other: #eef1f6; --danger: #dc2626;
+        }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html, body { height: 100%; margin: 0; }
+        body {
+            display: flex; flex-direction: column; background: var(--bg); color: var(--ink);
+            font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+            overscroll-behavior: none;
+        }
+
+        /* 헤더 */
+        .header { padding: env(safe-area-inset-top) .9rem 0; background: var(--card); border-bottom: 1px solid var(--line); }
+        .header-row { display: flex; align-items: center; justify-content: space-between; padding: .7rem 0 .55rem; }
+        .title { font-size: 1.05rem; font-weight: 700; margin: 0; }
+        .title small { display: block; font-size: .74rem; font-weight: 500; color: var(--muted); margin-top: 2px; }
+        .header-right { display: flex; align-items: center; gap: .55rem; }
+        .elapsed { font-variant-numeric: tabular-nums; font-size: .82rem; color: var(--muted); }
+        .end-btn { border: 0; background: var(--danger); color: #fff; font-size: .8rem; font-weight: 600; padding: .4rem .7rem; border-radius: 8px; }
+        .leave-btn { border: 1px solid var(--line); background: #fff; color: var(--muted); font-size: .8rem; font-weight: 600; padding: .4rem .7rem; border-radius: 8px; }
+        .conn { width: 8px; height: 8px; border-radius: 50%; background: #cbd5e1; flex: none; }
+        .conn.on { background: #16a34a; } .conn.off { background: var(--danger); }
+
+        .participants { display: flex; gap: .35rem; flex-wrap: wrap; padding: 0 0 .55rem; }
+        .chip { font-size: .72rem; background: var(--primary-soft); color: var(--primary); padding: .18rem .55rem; border-radius: 999px; font-weight: 600; }
+
+        /* 언어 바 */
+        .langbar { display: flex; gap: .4rem; padding: .5rem .9rem; background: var(--card); border-bottom: 1px solid var(--line); }
+        .lang { flex: 1; text-align: center; font-size: .82rem; padding: .4rem 0; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--muted); font-weight: 600; }
+        .lang.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+        /* 자막 스트림 */
+        .stream { flex: 1; overflow-y: auto; padding: .8rem .9rem; display: flex; flex-direction: column; gap: .55rem; -webkit-overflow-scrolling: touch; }
+        .row { display: flex; flex-direction: column; max-width: 82%; }
+        .row.me { align-self: flex-end; align-items: flex-end; }
+        .who { font-size: .72rem; color: var(--muted); margin: 0 .3rem .18rem; }
+        .bubble { padding: .55rem .7rem; border-radius: 14px; font-size: .92rem; line-height: 1.35; word-break: break-word; background: var(--other); }
+        .row.me .bubble { background: var(--me); color: #fff; border-bottom-right-radius: 4px; }
+        .row.other .bubble { border-bottom-left-radius: 4px; }
+        .time { font-size: .66rem; color: var(--muted); margin: .2rem .3rem 0; }
+        .empty { margin: auto; text-align: center; color: var(--muted); font-size: .88rem; padding: 2rem; }
+
+        /* 입력 바 */
+        .footer { padding: .55rem .9rem calc(.55rem + env(safe-area-inset-bottom)); background: var(--card); border-top: 1px solid var(--line); }
+        .inputrow { display: flex; gap: .5rem; align-items: flex-end; }
+        .input { flex: 1; min-width: 0; border: 1px solid var(--line); border-radius: 20px; padding: .6rem .9rem; font-size: .95rem; resize: none; max-height: 100px; font-family: inherit; }
+        .input:focus { outline: none; border-color: var(--primary); }
+        .send { border: 0; background: var(--primary); color: #fff; width: 42px; height: 42px; border-radius: 50%; font-size: 1.1rem; flex: none; display: flex; align-items: center; justify-content: center; }
+        .send:disabled { opacity: .45; }
+    </style>
+</head>
+<body>
+<div class="header">
+    <div class="header-row">
+        <h1 class="title">회의 진행<small id="code">코드 —</small></h1>
+        <div class="header-right">
+            <span id="elapsed" class="elapsed">00:00</span>
+            <span id="conn" class="conn" title="연결 상태"></span>
+            <button id="end" class="end-btn" style="display:none">종료</button>
+            <button id="leave" class="leave-btn" style="display:none">나가기</button>
+        </div>
+    </div>
+    <div id="participants" class="participants"></div>
+</div>
+
+<div class="langbar" id="langbar"></div>
+
+<div id="stream" class="stream">
+    <div class="empty" id="empty">첫 메시지를 보내 회의를 시작하세요.</div>
+</div>
+
+<div class="footer">
+    <div class="inputrow">
+        <textarea id="input" class="input" rows="1" placeholder="메시지 입력" enterkeyhint="send"></textarea>
+        <button id="send" class="send" disabled aria-label="전송">➤</button>
+    </div>
+</div>
+
+<script>
+'use strict';
+
+/* ── URL 파라미터 (RN WebView 가 주입) ────────────────────────────
+   meetingId, code, name, userId, host(0|1), token, lang(ko|en|ja|zh) */
+const Q = new URLSearchParams(location.search);
+const MEETING_ID = Q.get('meetingId');
+const CODE       = Q.get('code') || '';
+const MY_NAME    = Q.get('name') || '나';
+const MY_ID      = Number(Q.get('userId') || 0);
+const IS_HOST    = Q.get('host') === '1';
+const TOKEN      = Q.get('token') || '';
+let   myLang     = (Q.get('lang') || 'ko').toLowerCase();
+
+/* app 의 LangCode ↔ 백엔드 enum ↔ TTS locale 매핑 */
+const LANGS = [
+    { code: 'ko', backend: 'KO', label: '한국어', tts: 'ko-KR' },
+    { code: 'en', backend: 'EN', label: 'English', tts: 'en-US' },
+    { code: 'ja', backend: 'JA', label: '日本語',  tts: 'ja-JP' },
+    { code: 'zh', backend: 'ZH', label: '中文',    tts: 'zh-CN' },
+];
+const toBackend = (c) => (LANGS.find((l) => l.code === c) || LANGS[0]).backend;
+const ttsLocale = (backend) => {
+    const l = LANGS.find((x) => x.backend === backend);
+    return l ? l.tts : 'ko-KR';
+};
+
+/* ── DOM ──────────────────────────────────────────────────────── */
+const $ = (id) => document.getElementById(id);
+const streamEl = $('stream'), emptyEl = $('empty'), inputEl = $('input'), sendBtn = $('send');
+const connEl = $('conn'), endBtn = $('end'), leaveBtn = $('leave'), partEl = $('participants'), langbarEl = $('langbar'), elapsedEl = $('elapsed');
+$('code').textContent = CODE ? '코드 ' + CODE : '';
+
+/* RN 브리지 (WebView 밖·브라우저 단독 실행 시엔 no-op) */
+function toRN(payload) {
+    try { window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify(payload)); }
+    catch (e) { /* ignore */ }
+}
+
+/* ── 경과 시간 ────────────────────────────────────────────────── */
+const startedAt = Date.now();
+setInterval(() => {
+    const s = Math.floor((Date.now() - startedAt) / 1000);
+    const mm = String(Math.floor(s / 60)).padStart(2, '0');
+    const ss = String(s % 60).padStart(2, '0');
+    elapsedEl.textContent = mm + ':' + ss;
+}, 1000);
+
+/* ── 언어 바 ──────────────────────────────────────────────────── */
+function renderLangBar() {
+    langbarEl.innerHTML = '';
+    for (const l of LANGS) {
+        const b = document.createElement('button');
+        b.className = 'lang' + (l.code === myLang ? ' active' : '');
+        b.textContent = l.label;
+        b.onclick = () => { myLang = l.code; renderLangBar(); inputEl.focus(); };
+        langbarEl.appendChild(b);
+    }
+}
+renderLangBar();
+
+/* ── 참여자 ──────────────────────────────────────────────────── */
+function renderParticipants(list) {
+    // presence 가 오기 전에도 본인은 항상 보이도록
+    const names = list.includes(MY_NAME) ? list : [MY_NAME, ...list];
+    partEl.innerHTML = '';
+    for (const n of names) {
+        const c = document.createElement('span');
+        c.className = 'chip';
+        c.textContent = n;
+        partEl.appendChild(c);
+    }
+}
+renderParticipants([]);
+
+/* ── 자막 렌더 (id 로 중복 제거) ──────────────────────────────── */
+const seen = new Set();
+function parseSentAt(sentAt) {
+    if (!sentAt) return Date.now();
+    const iso = /(Z|[+-]\d{2}:?\d{2})$/.test(sentAt) ? sentAt : sentAt + 'Z';
+    const t = Date.parse(iso);
+    return Number.isNaN(t) ? Date.now() : t;
+}
+function addCaption(c) {
+    // c: { senderId, senderName, message, sentAt }
+    const id = c.senderName + '-' + c.sentAt;
+    if (seen.has(id)) return;
+    seen.add(id);
+    emptyEl.style.display = 'none';
+
+    const mine = c.senderId === MY_ID && c.senderName === MY_NAME;
+    const row = document.createElement('div');
+    row.className = 'row ' + (mine ? 'me' : 'other');
+
+    if (!mine) {
+        const who = document.createElement('div');
+        who.className = 'who';
+        who.textContent = c.senderName;
+        row.appendChild(who);
+    }
+    const bubble = document.createElement('div');
+    bubble.className = 'bubble';
+    bubble.textContent = c.message;
+    row.appendChild(bubble);
+
+    const t = document.createElement('div');
+    t.className = 'time';
+    const d = new Date(parseSentAt(c.sentAt));
+    t.textContent = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    row.appendChild(t);
+
+    streamEl.appendChild(row);
+    streamEl.scrollTop = streamEl.scrollHeight;
+}
+
+/* ── TTS (수신 CHAT 만, 본인 제외) ────────────────────────────── */
+function speak(text, backendLang) {
+    try {
+        if (!window.speechSynthesis) return;
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = ttsLocale(backendLang);
+        window.speechSynthesis.speak(u);
+    } catch (e) { /* ignore */ }
+}
+
+/* ── REST (놓친 메시지 복구 / 종료) ───────────────────────────── */
+function authHeaders() {
+    const h = {};
+    if (MY_ID) h['X-User-Id'] = String(MY_ID);
+    if (TOKEN) h['Authorization'] = 'Bearer ' + TOKEN;
+    return h;
+}
+let lastSentAt = null;
+function recoverMissed() {
+    const q = lastSentAt ? '?after=' + encodeURIComponent(lastSentAt) : '';
+    fetch('/api/meetings/' + MEETING_ID + '/messages' + q, { headers: authHeaders() })
+        .then((r) => (r.ok ? r.json() : []))
+        .then((list) => {
+            for (const m of list) {
+                lastSentAt = m.spokenAt;
+                addCaption({ senderId: m.userId, senderName: m.speakerName, message: m.original, sentAt: m.spokenAt });
+            }
+        })
+        .catch(() => {});
+}
+
+/* ── STOMP ────────────────────────────────────────────────────── */
+const base = '/topic/meetings/' + MEETING_ID;
+let connected = false;
+
+const client = new StompJs.Client({
+    webSocketFactory: () => new SockJS('/ws'),
+    connectHeaders: TOKEN ? { Authorization: 'Bearer ' + TOKEN } : {},
+    reconnectDelay: 5000,
+    heartbeatIncoming: 10000,
+    heartbeatOutgoing: 10000,
+});
+
+client.onConnect = () => {
+    connected = true;
+    connEl.className = 'conn on';
+    sendBtn.disabled = false;
+
+    client.subscribe(base, (f) => {
+        const m = JSON.parse(f.body);
+        lastSentAt = m.sentAt;
+        addCaption(m);
+        // 타이핑 채팅(CHAT)만, 그리고 남의 것만 TTS 로 읽어준다
+        const mine = m.senderId === MY_ID && m.senderName === MY_NAME;
+        if (!mine && m.source !== 'STT') speak(m.message, m.lang);
+    });
+    client.subscribe(base + '/participants', (f) => {
+        renderParticipants((JSON.parse(f.body).participants) || []);
+    });
+    client.subscribe(base + '/status', (f) => {
+        const ev = JSON.parse(f.body);
+        if (ev.type === 'ENDED') endedRemote();
+    });
+
+    // 입장(presence)
+    client.publish({
+        destination: '/app/meetings/' + MEETING_ID + '/participants/join',
+        body: JSON.stringify({ senderName: MY_NAME }),
+    });
+
+    recoverMissed();
+};
+client.onWebSocketClose = () => {
+    connected = false;
+    connEl.className = 'conn off';
+    sendBtn.disabled = true;
+};
+client.onStompError = (f) => console.warn('[STOMP] ' + (f.headers && f.headers.message));
+client.activate();
+
+/* ── 전송 ─────────────────────────────────────────────────────── */
+function send() {
+    const text = inputEl.value.trim();
+    if (!text || !connected) return;
+    client.publish({
+        destination: '/app/meetings/' + MEETING_ID + '/send',
+        body: JSON.stringify({
+            senderId: MY_ID,
+            senderName: MY_NAME,
+            message: text,
+            lang: toBackend(myLang),
+            source: 'CHAT',
+        }),
+    });
+    inputEl.value = '';
+    autoGrow();
+    inputEl.focus();
+}
+sendBtn.onclick = send;
+inputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+function autoGrow() {
+    inputEl.style.height = 'auto';
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 100) + 'px';
+}
+inputEl.addEventListener('input', autoGrow);
+
+/* ── 종료 ─────────────────────────────────────────────────────── */
+let closed = false;
+function goSummaryRN(remote) {
+    if (closed) return;
+    closed = true;
+    try { client.deactivate(); } catch (e) { /* ignore */ }
+    toRN({ type: 'ended', remote: !!remote });
+}
+function endedRemote() { goSummaryRN(true); }   // 개설자가 종료 → 참여자
+
+if (IS_HOST) {
+    // 개설자(attendance.iscreated='Y') → 회의 종료 버튼
+    endBtn.style.display = '';
+    endBtn.onclick = () => {
+        if (!confirm('회의를 종료할까요?\n종료하면 회의 요약과 전체 대화를 확인할 수 있어요.')) return;
+        // 내가 먼저 화면 정리(요약 이동)하고, 서버 종료 요청은 병행 (서버가 참여자에게 ENDED 브로드캐스트)
+        goSummaryRN(false);
+        fetch('/api/meetings/' + MEETING_ID + '/end', { method: 'POST', headers: authHeaders() })
+            .catch((e) => console.warn('[end] 종료 요청 실패', e));
+    };
+} else {
+    // 참여자 → 회의 나가기 버튼. "재참여 여부" 선택은 앱(네이티브 Alert)에서 묻는다.
+    // (연결은 여기서 끊지 않는다 — 앱이 화면을 벗어나며 WebView 언마운트 시 자동 종료 → presence 정리.
+    //  앱에서 취소하면 연결이 유지돼 그대로 회의 계속 가능)
+    leaveBtn.style.display = '';
+    leaveBtn.onclick = () => { toRN({ type: 'left' }); };
+}
+
+/* RN 이 뒤로가기 등으로 정리 요청할 때 대비 */
+window.addEventListener('pagehide', () => { try { client.deactivate(); } catch (e) {} });
+</script>
+</body>
+</html>
