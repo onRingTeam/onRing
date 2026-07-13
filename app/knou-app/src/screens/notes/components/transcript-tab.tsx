@@ -1,12 +1,22 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { translate } from '@/lib/translate';
+import { useSettingsStore } from '@/store';
 import type { MeetingMessageDto } from '@/types/meeting';
 import { SPEAKER_COLORS } from './summary-tab';
+
+/** 메시지별 번역 상태. done=번역 시도 완료(결과 null 이어도 true), shown=표시 토글. */
+interface TransState {
+  loading: boolean;
+  text: string | null;
+  shown: boolean;
+  done: boolean;
+}
 
 export interface TranscriptTabProps {
   messages: MeetingMessageDto[];
@@ -21,10 +31,35 @@ function formatSpokenAt(spokenAt: string): string {
 
 /**
  * 상세회의 '전체 대화' 탭 — 발화자·시간·원문 조회. (화면정의서 4-d)
- * 번역문은 표시하지 않고, 메시지마다 '번역' 버튼(예정 기능)만 노출한다.
+ * 메시지마다 '번역' 버튼 → 설정에서 고른 언어(myLanguage)로 온디바이스 번역(@/lib/translate).
  */
 export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabProps) {
   const colors = useTheme();
+
+  // 번역 대상 언어 = 설정에서 고른 내 언어(스토어 관리).
+  const targetLang = useSettingsStore((s) => s.myLanguage);
+  const [trans, setTrans] = useState<Record<number, TransState>>({});
+
+  // 설정 언어가 바뀌면 기존 번역 캐시는 무효 → 초기화.
+  useEffect(() => {
+    setTrans({});
+  }, [targetLang]);
+
+  const onTranslate = useCallback(
+    async (m: MeetingMessageDto) => {
+      const cur = trans[m.messageId];
+      if (cur?.loading) return; // 진행 중 재요청 무시
+      if (cur?.done) {
+        // 이미 번역함 → 표시/숨김만 토글
+        setTrans((p) => ({ ...p, [m.messageId]: { ...cur, shown: !cur.shown } }));
+        return;
+      }
+      setTrans((p) => ({ ...p, [m.messageId]: { loading: true, text: null, shown: true, done: false } }));
+      const result = await translate(m.original, targetLang);
+      setTrans((p) => ({ ...p, [m.messageId]: { loading: false, text: result, shown: true, done: true } }));
+    },
+    [trans, targetLang],
+  );
 
   // 발화자별 색상 배정 — 등장 순서대로 팔레트 순환 (같은 화자는 같은 색).
   const colorByUser = useMemo(() => {
@@ -81,20 +116,43 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
             <ThemedText type="small" style={styles.original}>
               {m.original}
             </ThemedText>
-            {/* 실시간 번역 — 예정 기능 (구현 전까지 UI 만 노출). */}
-            <TouchableOpacity
-              style={styles.translateBtn}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="번역"
-              // TODO: 온디바이스 번역(@/lib/translate) 연결 예정
-              onPress={() => {}}
-            >
-              <Feather name="globe" size={13} color={colors.accent} />
-              <ThemedText type="small" style={[styles.translateText, { color: colors.accent }]}>
-                번역
-              </ThemedText>
-            </TouchableOpacity>
+
+            {(() => {
+              const t = trans[m.messageId];
+              return (
+                <>
+                  {t?.shown && !t.loading && (
+                    <View style={[styles.translationBox, { backgroundColor: colors.backgroundSelected }]}>
+                      <ThemedText
+                        type="small"
+                        style={{ color: t.text ? colors.accent : colors.textSecondary }}
+                      >
+                        {t.text ?? '번역할 내용이 없어요.'}
+                      </ThemedText>
+                    </View>
+                  )}
+                  <TouchableOpacity
+                    style={styles.translateBtn}
+                    activeOpacity={0.7}
+                    accessibilityRole="button"
+                    accessibilityLabel={t?.done && t.shown ? '번역 숨기기' : '번역'}
+                    disabled={t?.loading}
+                    onPress={() => onTranslate(m)}
+                  >
+                    {t?.loading ? (
+                      <ActivityIndicator size="small" color={colors.accent} />
+                    ) : (
+                      <>
+                        <Feather name="globe" size={13} color={colors.accent} />
+                        <ThemedText type="small" style={[styles.translateText, { color: colors.accent }]}>
+                          {t?.done && t.shown ? '숨기기' : '번역'}
+                        </ThemedText>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </>
+              );
+            })()}
           </View>
         </View>
       ))}
@@ -142,6 +200,11 @@ const styles = StyleSheet.create({
   },
   original: {
     lineHeight: 20,
+  },
+  translationBox: {
+    borderRadius: 12,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
   },
   translateBtn: {
     flexDirection: 'row',
