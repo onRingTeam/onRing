@@ -12,6 +12,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="meeting" options={{ href: null }} />
       <Tabs.Screen name="meeting-summary" options={{ href: null }} />
       <Tabs.Screen name="notes/[id]" options={{ href: null }} />
+      <Tabs.Screen name="privacy" options={{ href: null }} />
     </Tabs>
   );
 }

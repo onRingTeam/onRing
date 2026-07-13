@@ -1,4 +1,5 @@
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
@@ -12,6 +13,7 @@ const APP_VERSION = '1.0.0';
 /** 앱 정보 (화면정의서 6-e). 버전 / 개인정보 처리방침 / 로그아웃. */
 export function AppInfoCard() {
   const colors = useTheme();
+  const router = useRouter();
 
   const handleLogout = async () => {
     try {
@@ -39,6 +41,7 @@ export function AppInfoCard() {
 
         <TouchableOpacity
           style={[styles.row, { borderBottomColor: colors.border }]}
+          onPress={() => router.push('/privacy' as any)}
           activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel="개인정보 처리방침"
