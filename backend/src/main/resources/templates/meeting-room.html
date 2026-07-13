@@ -114,6 +114,8 @@ const MY_ID      = Number(Q.get('userId') || 0);
 const IS_HOST    = Q.get('host') === '1';
 const TOKEN      = Q.get('token') || '';
 let   myLang     = (Q.get('lang') || 'ko').toLowerCase();
+/* 앱으로 돌아갈 딥링크(knouapp://meeting-done). 앱이 openAuthSessionAsync 로 이 복귀를 가로채 처리한다. */
+const RETURN_URL = Q.get('returnUrl') || '';
 
 /* app 의 LangCode ↔ 백엔드 enum ↔ TTS locale 매핑 */
 const LANGS = [
@@ -134,10 +136,12 @@ const streamEl = $('stream'), emptyEl = $('empty'), inputEl = $('input'), sendBt
 const connEl = $('conn'), endBtn = $('end'), leaveBtn = $('leave'), partEl = $('participants'), langbarEl = $('langbar'), elapsedEl = $('elapsed');
 $('code').textContent = CODE ? '코드 ' + CODE : '';
 
-/* RN 브리지 (WebView 밖·브라우저 단독 실행 시엔 no-op) */
-function toRN(payload) {
-    try { window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify(payload)); }
-    catch (e) { /* ignore */ }
+/* 앱 복귀 브리지 — 딥링크로 리다이렉트하면 앱의 openAuthSessionAsync 가 이를 받아 처리(요약/나가기).
+   RETURN_URL 이 없으면(일반 브라우저 단독 실행) no-op. */
+function returnToApp(type, remote) {
+    if (!RETURN_URL) return;
+    const sep = RETURN_URL.indexOf('?') === -1 ? '?' : '&';
+    location.href = RETURN_URL + sep + 'type=' + encodeURIComponent(type) + (remote ? '&remote=1' : '');
 }
 
 /* ── 경과 시간 ────────────────────────────────────────────────── */
@@ -326,30 +330,37 @@ inputEl.addEventListener('input', autoGrow);
 
 /* ── 종료 ─────────────────────────────────────────────────────── */
 let closed = false;
-function goSummaryRN(remote) {
+function endedRemote() {   // 개설자가 종료 → 참여자: 요약으로
     if (closed) return;
     closed = true;
     try { client.deactivate(); } catch (e) { /* ignore */ }
-    toRN({ type: 'ended', remote: !!remote });
+    returnToApp('ended', true);
 }
-function endedRemote() { goSummaryRN(true); }   // 개설자가 종료 → 참여자
 
 if (IS_HOST) {
     // 개설자(attendance.iscreated='Y') → 회의 종료 버튼
     endBtn.style.display = '';
-    endBtn.onclick = () => {
+    endBtn.onclick = async () => {
         if (!confirm('회의를 종료할까요?\n종료하면 회의 요약과 전체 대화를 확인할 수 있어요.')) return;
-        // 내가 먼저 화면 정리(요약 이동)하고, 서버 종료 요청은 병행 (서버가 참여자에게 ENDED 브로드캐스트)
-        goSummaryRN(false);
-        fetch('/api/meetings/' + MEETING_ID + '/end', { method: 'POST', headers: authHeaders() })
-            .catch((e) => console.warn('[end] 종료 요청 실패', e));
+        if (closed) return;
+        closed = true;
+        endBtn.disabled = true;
+        // 딥링크로 페이지를 떠나기 전에 종료 요청을 확실히 보낸다(리다이렉트가 in-flight fetch 를 끊지 않도록 await).
+        // 서버는 참여자 전원에게 ENDED 브로드캐스트한다. 실패해도 개설자는 요약으로 이동.
+        try {
+            await fetch('/api/meetings/' + MEETING_ID + '/end', { method: 'POST', headers: authHeaders(), keepalive: true });
+        } catch (e) { console.warn('[end] 종료 요청 실패', e); }
+        try { client.deactivate(); } catch (e) { /* ignore */ }
+        returnToApp('ended', false);
     };
 } else {
     // 참여자 → 회의 나가기 버튼. "재참여 여부" 선택은 앱(네이티브 Alert)에서 묻는다.
-    // (연결은 여기서 끊지 않는다 — 앱이 화면을 벗어나며 WebView 언마운트 시 자동 종료 → presence 정리.
-    //  앱에서 취소하면 연결이 유지돼 그대로 회의 계속 가능)
     leaveBtn.style.display = '';
-    leaveBtn.onclick = () => { toRN({ type: 'left' }); };
+    leaveBtn.onclick = () => {
+        if (closed) return;
+        closed = true;
+        returnToApp('left', false);
+    };
 }
 
 /* RN 이 뒤로가기 등으로 정리 요청할 때 대비 */

@@ -16,11 +16,11 @@ jobs:
       run:
         working-directory: app/knou-app
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # 로컬 개발 환경(node 24 / npm 11)과 동일하게 — package-lock 이 npm 11 기준이라
       # npm 10(node 22)의 `npm ci` 검증이 실패함 (typescript 중첩 항목 해석 차이)
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
