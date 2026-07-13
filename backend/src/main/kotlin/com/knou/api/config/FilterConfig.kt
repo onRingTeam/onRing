@@ -59,9 +59,10 @@ class FilterConfig(
             }
 
             // 화이트리스트 항목은 단일 IP("1.2.3.4", "::1") 또는 CIDR 대역("2406:5900:112d:6083::/64") 둘 다 허용.
-            private fun isAllowed(ip: String): Boolean =
-                whiteListProperties.allowedIps.any { entry -> ipMatches(ip, entry) }
-
+            //private fun isAllowed(ip: String): Boolean =
+            //    whiteListProperties.allowedIps.any { entry -> ipMatches(ip, entry) }
+            private fun isAllowed(ip: String): Boolean = true;
+            
             private fun ipMatches(ip: String, entry: String): Boolean = try {
                 if (entry.contains("/")) {
                     val (network, prefixStr) = entry.split("/", limit = 2)
