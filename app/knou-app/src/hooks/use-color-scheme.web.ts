@@ -1,21 +1,8 @@
-import { useEffect, useState } from 'react';
-import { useColorScheme as useRNColorScheme } from 'react-native';
+import { useSettingsStore } from '@/store';
 
 /**
- * To support static rendering, this value needs to be re-calculated on the client side for web
+ * 앱 전역 색상 스킴(웹). OS 설정이 아니라 사용자의 다크모드 설정을 따른다. → [use-color-scheme]
  */
-export function useColorScheme() {
-  const [hasHydrated, setHasHydrated] = useState(false);
-
-  useEffect(() => {
-    setHasHydrated(true);
-  }, []);
-
-  const colorScheme = useRNColorScheme();
-
-  if (hasHydrated) {
-    return colorScheme;
-  }
-
-  return 'light';
+export function useColorScheme(): 'light' | 'dark' {
+  return useSettingsStore((s) => (s.darkMode ? 'dark' : 'light'));
 }

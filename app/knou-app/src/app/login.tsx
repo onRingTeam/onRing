@@ -9,6 +9,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { loginWithGoogle } from '@/lib/auth';
 
 const SYMBOL = require('../../assets/images/brand/onring-symbol.png');
+const SYMBOL_DARK = require('../../assets/images/brand/dark-logo.png');
 
 /**
  * 로그인 화면. 구글 로그인 하나로 진입한다.
@@ -36,7 +37,7 @@ export default function LoginScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.hero}>
-        <Image source={SYMBOL} style={styles.symbol} resizeMode="contain" accessibilityLabel="OnRing 로고" />
+        <Image source={scheme === 'dark' ? SYMBOL_DARK : SYMBOL} style={styles.symbol} resizeMode="contain" accessibilityLabel="OnRing 로고" />
         <ThemedText style={[styles.tagline, { color: colors.textSecondary }]}>
             언어의 장벽을 끄고, 소통의 링을 켜다.
         </ThemedText>
