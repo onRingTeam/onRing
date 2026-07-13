@@ -134,8 +134,10 @@ class MeetingService(
      */
     @Transactional(readOnly = true)
     fun activeMeeting(userId: Long): MeetingRoomResponse? {
+        // useYn=Y 만 — 참여자가 "재참여 안 함"으로 나간(useYn=N) 회의는 진행중으로 잡지 않는다
+        // (그래야 홈에서 새 회의 개설이 다시 가능해진다).
         val attendance = attendanceRepository
-            .findFirstByUser_UserIdAndMeeting_Status(userId, "IN_PROGRESS")
+            .findFirstByUser_UserIdAndMeeting_StatusAndUseYn(userId, "IN_PROGRESS", "Y")
             ?: return null
         val meeting = attendance.meeting
         return MeetingRoomResponse(
@@ -292,6 +294,23 @@ class MeetingService(
 
         meeting.status = "ENDED"
         meeting.durationSec = Duration.between(meeting.meetingDate, LocalDateTime.now()).seconds.toInt()
+    }
+
+    /**
+     * 회의 나가기(참여자 전용, "재참여 안 함"). 내 참석 레코드의 useYn 을 N 으로 바꿔
+     * 진행중 회의(activeMeeting) · 내 회의록 목록에서 제외한다. 회의 자체와 다른 참석자에겐 영향 없다.
+     * 실시간 presence 는 WebSocket 연결 종료로 자동 정리된다.
+     *
+     * @throws ResponseStatusException 404(참석 없음), 403(개설자 — 개설자는 종료를 사용)
+     */
+    @Transactional
+    fun leave(userId: Long, meetingId: Long) {
+        val attendance = attendanceRepository.findByMeeting_MeetingIdAndUser_UserId(meetingId, userId)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "참석 기록을 찾을 수 없습니다.")
+        if (attendance.isCreated == "Y") {
+            throw ResponseStatusException(HttpStatus.FORBIDDEN, "개설자는 나갈 수 없습니다. 회의를 종료하세요.")
+        }
+        attendance.useYn = "N"
     }
 
     /** MeetingAttendance(내 참석 레코드) → 목록 카드 DTO 매핑. 참여자명·사용 언어는 회의 전체 참석자에서 집계. */

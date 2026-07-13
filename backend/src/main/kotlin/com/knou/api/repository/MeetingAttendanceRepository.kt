@@ -19,6 +19,13 @@ interface MeetingAttendanceRepository : JpaRepository<MeetingAttendanceEntity, L
     // 특정 회원의 진행중(IN_PROGRESS 등) 회의 참석 단건 (현재 진행중 회의 조회)
     fun findFirstByUser_UserIdAndMeeting_Status(userId: Long, status: String): MeetingAttendanceEntity?
 
+    // 특정 회원의 진행중 + 사용중(useYn) 회의 참석 단건 — 나간(useYn=N) 회의는 진행중에서 제외
+    fun findFirstByUser_UserIdAndMeeting_StatusAndUseYn(
+        userId: Long,
+        status: String,
+        useYn: String,
+    ): MeetingAttendanceEntity?
+
     // 회의 + 회원으로 단건 조회 (복합 unique)
     fun findByMeeting_MeetingIdAndUser_UserId(meetingId: Long, userId: Long): MeetingAttendanceEntity?
 
