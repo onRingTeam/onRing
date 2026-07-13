@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import * as WebBrowser from 'expo-web-browser';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { WebView } from 'react-native-webview';
+import type { ShouldStartLoadRequest, WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
 import { makeRedirectUri } from 'expo-auth-session';
 import * as Linking from 'expo-linking';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -13,34 +14,41 @@ import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuthStore, useMeetingStore } from '@/store';
+import type { BackendLang, LangCode } from '@/types/meeting';
 import { fromBackendLang } from '@/types/meeting';
 import { API_BASE } from '@/lib/config';
+import { LiveStt } from '@/lib/stt/live-stt';
+import { speakMessage, stopSpeaking } from '@/lib/tts';
 import { useProfile } from '@/screens/settings/hooks';
 import { leaveMeeting } from './api';
 import { useMeetingSession } from './hooks';
 
 /**
  * 회의 진행 화면 — 백엔드가 서빙하는 웹 페이지(templates/meeting-room.html)를
- * 인앱 브라우저(expo-web-browser)로 연다.
+ * 인라인 WebView(react-native-webview)로 페이지 안에 임베드한다.
  *
  * ⚠️ 왜 네이티브가 아니라 웹인가:
  *   RN(Android) 의 WebSocket 이 STOMP NULL 프레임을 누락해 실시간 채팅 연결이 불안정하다.
  *   브라우저(stompjs + SockJS)에서는 정상 동작하므로, 채팅·자막·참여자 UI 만 웹으로 옮겼다.
+ *   (웹 페이지 UI 는 네이티브 meeting-screen.tsx 와 동일한 디자인으로 맞춰져 있다.)
  *
- * ⚠️ 왜 react-native-webview 가 아니라 expo-web-browser 인가:
- *   react-native-webview 는 네이티브 모듈이라 OTA(JS만 교체)로 배포되지 않아 앱 재빌드가 필요하다.
- *   expo-web-browser 는 이미 설치·빌드돼 있어(로그인 플로우와 동일) OTA 만으로 배포된다.
+ * ⚠️ react-native-webview 는 네이티브 모듈 — OTA(JS만 교체)로는 배포되지 않고 앱 재빌드가 필요하다.
+ *   (별도 창으로 띄우던 expo-web-browser 방식은 이 파일의 git 히스토리에 보존.)
  *
- * 종료/나가기 복귀: 웹 페이지가 딥링크(knouapp://meeting-done?type=…)로 리다이렉트하면
- *   openAuthSessionAsync 가 이를 가로채 resolve → 여기서 요약 이동/나가기 처리.
+ * 종료/나가기 복귀: 웹 페이지가 딥링크(knouapp://meeting-done?type=…)로 이동을 시도하면
+ *   onShouldStartLoadWithRequest 가 이를 가로채(→ 페이지는 그대로) 요약 이동/나가기 처리.
  */
 
-/** 웹 페이지가 회의 종료·나가기 후 돌아올 딥링크. (OAuth 콜백과 동일 메커니즘) */
+/** 웹 페이지가 회의 종료·나가기 시 이동을 시도할 딥링크. (WebView 가 내비게이션을 가로챈다) */
 const RETURN_URL = makeRedirectUri({ scheme: 'knouapp', path: 'meeting-done' });
+
+/** 웹 헤더(.header)와 같은 색 — 상태바 영역이 헤더와 이어져 보이도록. */
+const HEADER_NAVY = '#16305C';
 
 export function MeetingWebScreen() {
   const router = useRouter();
   const qc = useQueryClient();
+  const insets = useSafeAreaInsets();
   const { code, meetingId: meetingIdParam } = useLocalSearchParams<{ code?: string; meetingId?: string }>();
   const meetingId = meetingIdParam ? Number(meetingIdParam) : null;
 
@@ -58,14 +66,68 @@ export function MeetingWebScreen() {
   const startedMeetingRef = useRef<number | null>(null);
   // 종료/나가기 처리를 1회만 실행하기 위한 가드.
   const doneRef = useRef(false);
-  // 브라우저를 1회만 자동으로 열기 위한 가드.
-  const openedRef = useRef(false);
+  // 웹 페이지에 STT 결과를 주입하기 위한 WebView 핸들.
+  const webRef = useRef<WebView>(null);
+  // 진행 중인 네이티브 STT 세션 (웹 페이지의 마이크 토글이 브리지로 제어).
+  const sttRef = useRef<LiveStt | null>(null);
+
+  const stopStt = () => {
+    sttRef.current?.stop();
+    sttRef.current = null;
+  };
+
+  // 웹 페이지의 STT/TTS 위임 요청 — Android WebView 에는 Web Speech API 가 없어서
+  // 마이크 인식은 expo-speech-recognition(LiveStt), 읽어주기는 expo-speech 로 네이티브에서 수행한다.
+  const onMessage = (e: WebViewMessageEvent) => {
+    let msg: { type?: string; text?: string; lang?: string };
+    try {
+      msg = JSON.parse(e.nativeEvent.data);
+    } catch {
+      return;
+    }
+    switch (msg.type) {
+      case 'tts':
+        if (msg.text) speakMessage(msg.text, (msg.lang as BackendLang) ?? null);
+        break;
+      case 'tts-stop':
+        stopSpeaking();
+        break;
+      case 'stt-start': {
+        stopStt();
+        const stt = new LiveStt({
+          lang: (msg.lang as LangCode) ?? 'ko',
+          // 확정 문장을 웹 페이지에 주입 → 페이지가 STOMP 로 발행(source: STT)
+          onFinal: (text) =>
+            webRef.current?.injectJavaScript(
+              `window.__sttFinal && window.__sttFinal(${JSON.stringify(text)}); true;`,
+            ),
+        });
+        sttRef.current = stt;
+        void stt.start().then((granted) => {
+          if (!granted) {
+            sttRef.current = null;
+            webRef.current?.injectJavaScript('window.__sttDenied && window.__sttDenied(); true;');
+          }
+        });
+        break;
+      }
+      case 'stt-stop':
+        stopStt();
+        break;
+    }
+  };
+
+  // 화면을 떠날 때(언마운트) STT/TTS 정리.
+  useEffect(() => () => {
+    sttRef.current?.stop();
+    sttRef.current = null;
+    stopSpeaking();
+  }, []);
 
   useEffect(() => {
     if (meetingId !== null && startedMeetingRef.current !== meetingId) {
       startedMeetingRef.current = meetingId;
       doneRef.current = false;
-      openedRef.current = false;
       startMeeting(code ?? '');
     }
   }, [meetingId, code, startMeeting]);
@@ -91,6 +153,10 @@ export function MeetingWebScreen() {
   const finishLocally = (remote: boolean) => {
     if (doneRef.current) return;
     doneRef.current = true;
+    stopStt();
+    stopSpeaking();
+    // 재입장 시 세션을 새로 시작할 수 있도록 초기화 (탭 화면은 언마운트되지 않음)
+    startedMeetingRef.current = null;
     clearActiveMeeting();
     clearMeeting();
     qc.invalidateQueries({ queryKey: ['recent-meetings'] });
@@ -120,6 +186,10 @@ export function MeetingWebScreen() {
   const leaveAndGoHome = (willRejoin: boolean) => {
     if (doneRef.current) return;
     doneRef.current = true;
+    stopStt();
+    stopSpeaking();
+    // 재입장(홈 「재입장」 버튼) 시 세션을 새로 시작할 수 있도록 초기화
+    startedMeetingRef.current = null;
     clearMeeting();
     if (!willRejoin) {
       clearActiveMeeting();
@@ -129,90 +199,74 @@ export function MeetingWebScreen() {
     router.replace('/(tabs)');
   };
 
-  // 나가기 요청 → 재참여 여부 확인. 취소하면 회의는 그대로(홈 이동만 취소).
+  // 나가기 요청 → 재참여 여부 확인. 취소하면 아무것도 하지 않는다 —
+  // 딥링크 내비게이션은 가로챘으므로 웹 페이지(회의)는 그대로 살아 있다.
   const promptLeave = () => {
     Alert.alert(
       '회의에서 나가기',
       '나중에 이 회의에 다시 참여하실 건가요?',
       [
-        { text: '취소', style: 'cancel', onPress: goHomeKeepActive },
+        { text: '취소', style: 'cancel' },
         { text: '재참여 안 함', style: 'destructive', onPress: () => leaveAndGoHome(false) },
         { text: '재참여할게요', onPress: () => leaveAndGoHome(true) },
       ],
-      { cancelable: true, onDismiss: goHomeKeepActive },
+      { cancelable: true },
     );
   };
 
-  // 브라우저를 그냥 닫음(X) — 회의는 유지, 홈으로. 진행중 상태는 남겨 재입장 가능.
-  function goHomeKeepActive() {
-    if (doneRef.current) return;
-    doneRef.current = true;
-    clearMeeting();
-    router.replace('/(tabs)');
-  }
-
-  // 회의실 열기 — 딥링크 복귀를 openAuthSessionAsync 로 가로채 종료/나가기 분기.
-  const openRoom = useCallback(async () => {
-    if (!uri) return;
-    try {
-      const result = await WebBrowser.openAuthSessionAsync(uri, RETURN_URL);
-      if (result.type === 'success' && result.url) {
-        const { queryParams } = Linking.parse(result.url);
-        const type = typeof queryParams?.type === 'string' ? queryParams.type : '';
-        const remote = queryParams?.remote === '1';
-        if (type === 'ended') finishLocally(remote);
-        else if (type === 'left') promptLeave();
-        else goHomeKeepActive();
-      } else {
-        // dismiss/cancel — 사용자가 브라우저를 닫음.
-        goHomeKeepActive();
-      }
-    } catch (e) {
-      console.warn('[meeting] 회의실 열기 실패', e);
-      goHomeKeepActive();
-    }
+  // 웹 페이지의 딥링크(knouapp://meeting-done?type=…) 이동을 가로채 종료/나가기 분기.
+  // false 를 반환해 실제 내비게이션은 막는다(WebView 는 회의 페이지에 그대로 남음).
+  const onShouldStartLoad = useCallback(
+    (req: ShouldStartLoadRequest) => {
+      if (!req.url.startsWith('knouapp://')) return true;
+      const { queryParams } = Linking.parse(req.url);
+      const type = typeof queryParams?.type === 'string' ? queryParams.type : '';
+      const remote = queryParams?.remote === '1';
+      if (type === 'ended') finishLocally(remote);
+      else if (type === 'left') promptLeave();
+      return false;
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uri]);
-
-  // 진입 시 1회 자동으로 회의실(브라우저)을 연다.
-  useEffect(() => {
-    if (!uri || openedRef.current) return;
-    openedRef.current = true;
-    void openRoom();
-  }, [uri, openRoom]);
+    [meetingId],
+  );
 
   // 진행 중인 회의 없이 「회의」 탭 직접 진입 → 안내
   if (meetingId === null && !inMeeting) return <NoMeetingState />;
 
-  // 브라우저가 앞에 떠 있는 동안 뒤에 보이는 대기 화면 (닫혔을 때 다시 열기 제공)
-  return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.waitingInner}>
-        <ActivityIndicator />
-        <ThemedText type="smallBold" style={styles.waitingTitle}>
-          회의 진행 중
-        </ThemedText>
-        <ThemedText type="small" themeColor="textSecondary" style={styles.waitingDesc}>
-          회의는 별도 창에서 진행됩니다. 창이 닫혔다면 아래에서 다시 열 수 있어요.
-        </ThemedText>
-        <ReopenButton onPress={openRoom} />
-      </SafeAreaView>
-    </ThemedView>
-  );
-}
+  // 세션 시작 전 첫 프레임 / 종료·나가기 후(탭 화면은 언마운트되지 않음) —
+  // WebView 를 내려 페이지의 STOMP 연결(presence)·STT 를 확실히 정리한다.
+  if (!uri || !inMeeting) {
+    return (
+      <ThemedView style={styles.container}>
+        <View style={styles.loading}>
+          <ActivityIndicator />
+        </View>
+      </ThemedView>
+    );
+  }
 
-function ReopenButton({ onPress }: { onPress: () => void }) {
-  const colors = useTheme();
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.8}
-      style={[styles.reopenBtn, { backgroundColor: colors.primary }]}
-      accessibilityRole="button"
-      accessibilityLabel="회의실 다시 열기"
-    >
-      <ThemedText style={styles.reopenText}>회의실 다시 열기</ThemedText>
-    </TouchableOpacity>
+    // 상태바 영역을 웹 헤더와 같은 네이비로 채워 페이지에 박힌 한 화면처럼 보이게 한다.
+    // (Android WebView 는 env(safe-area-inset-top)=0 이라 여기서 패딩을 준다)
+    <View style={[styles.container, { backgroundColor: HEADER_NAVY, paddingTop: insets.top }]}>
+      <WebView
+        ref={webRef}
+        key={uri}
+        source={{ uri }}
+        style={styles.web}
+        originWhitelist={['*']}
+        onMessage={onMessage}
+        onShouldStartLoadWithRequest={onShouldStartLoad}
+        setSupportMultipleWindows={false}
+        domStorageEnabled
+        startInLoadingState
+        renderLoading={() => (
+          <View style={[styles.loading, StyleSheet.absoluteFill]}>
+            <ActivityIndicator />
+          </View>
+        )}
+      />
+    </View>
   );
 }
 
@@ -246,22 +300,12 @@ function NoMeetingState() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  waitingInner: {
+  web: { flex: 1, backgroundColor: 'transparent' },
+  loading: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.two,
-    paddingHorizontal: Spacing.four,
   },
-  waitingTitle: { marginTop: Spacing.two, fontSize: 16 },
-  waitingDesc: { textAlign: 'center' },
-  reopenBtn: {
-    marginTop: Spacing.three,
-    paddingHorizontal: Spacing.five,
-    paddingVertical: Spacing.three,
-    borderRadius: Spacing.two,
-  },
-  reopenText: { color: '#ffffff', fontWeight: '700', fontSize: 15 },
   emptyContainer: { flex: 1 },
   emptyInner: {
     flex: 1,
