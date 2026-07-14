@@ -9,9 +9,13 @@ import org.slf4j.LoggerFactory
 import org.springframework.http.MediaType
 import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.stereotype.Component
+import org.springframework.web.client.HttpClientErrorException
+import org.springframework.web.client.HttpServerErrorException
+import org.springframework.web.client.ResourceAccessException
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.body
 import java.time.format.DateTimeFormatter
+import kotlin.random.Random
 
 /** 회의 참석자 최소 정보(요약 프롬프트·정합성 기준). */
 data class AttendeeInfo(val userId: Long, val name: String)
@@ -54,8 +58,12 @@ class GeminiClient(
     /**
      * 회의 채팅을 요약하고 참석자별 액션아이템을 생성한다.
      *
+     * 주 모델([GeminiProperties.model])로 [GeminiProperties.maxAttempts] 회까지 재시도하되,
+     * **재시도 가능한 오류**(503/429/5xx·I/O 타임아웃)에만 지수 백오프 + 지터로 대기한다.
+     * 그래도 실패하면 [GeminiProperties.fallbackModel] 로 1회 폴백한다(설정돼 있고 주 모델과 다를 때).
+     *
      * @throws IllegalStateException apiKey 미설정 또는 응답이 비어있음
-     * @throws org.springframework.web.client.RestClientException 호출 실패
+     * @throws org.springframework.web.client.RestClientException 모든 시도·폴백 실패
      */
     fun summarizeMeeting(
         attendees: List<AttendeeInfo>,
@@ -73,8 +81,40 @@ class GeminiClient(
             ),
         )
 
+        // 주 모델 재시도 → 소진 시 폴백 모델 1회.
+        val maxAttempts = props.maxAttempts.coerceAtLeast(1)
+        var lastError: RuntimeException
+        var attempt = 1
+        while (true) {
+            try {
+                return callModel(props.model, requestBody)
+            } catch (e: RuntimeException) {
+                lastError = e
+                // 재시도 불가(4xx 등)면 즉시 중단하고 폴백 판단으로.
+                if (!isRetryable(e) || attempt >= maxAttempts) break
+                val backoff = backoffMillis(attempt)
+                log.warn(
+                    "[gemini] 모델 {} {}차 시도 실패({}), {}ms 후 재시도",
+                    props.model, attempt, e.message?.take(120), backoff,
+                )
+                sleep(backoff)
+                attempt++
+            }
+        }
+
+        // 폴백: 설정돼 있고 주 모델과 다르며, 마지막 오류가 재시도 가능(과부하성)한 경우에만.
+        val fallback = props.fallbackModel
+        if (fallback.isNotBlank() && fallback != props.model && isRetryable(lastError)) {
+            log.warn("[gemini] 주 모델 {} 소진, 폴백 모델 {} 로 1회 시도", props.model, fallback)
+            return callModel(fallback, requestBody)
+        }
+        throw lastError
+    }
+
+    /** 지정 모델로 generateContent 1회 호출 후 구조화 JSON 을 파싱한다. */
+    private fun callModel(model: String, requestBody: Map<String, Any>): MeetingSummaryResult {
         val response = restClient.post()
-            .uri("/models/{model}:generateContent", props.model)
+            .uri("/models/{model}:generateContent", model)
             .header("x-goog-api-key", props.apiKey)
             .contentType(MediaType.APPLICATION_JSON)
             .body(requestBody)
@@ -85,6 +125,36 @@ class GeminiClient(
             ?: throw IllegalStateException("Gemini 응답이 비어있습니다.")
 
         return objectMapper.readValue(json)
+    }
+
+    /**
+     * 재시도 가능한 일시적 오류인지 판정.
+     * - 503/500 등 5xx 서버 오류([HttpServerErrorException])
+     * - 429 요청 과다([HttpClientErrorException.TooManyRequests])
+     * - 연결/읽기 타임아웃 등 I/O([ResourceAccessException])
+     * 그 외(400·401·403 등 4xx, 응답 파싱 오류)는 재시도해도 무의미하므로 false.
+     */
+    private fun isRetryable(e: RuntimeException): Boolean = when (e) {
+        is HttpServerErrorException -> true
+        is HttpClientErrorException.TooManyRequests -> true
+        is ResourceAccessException -> true
+        else -> false
+    }
+
+    /** n차 재시도 전 대기(ms): retryBackoffMs * 2^(n-1) + 0~500ms 지터. */
+    private fun backoffMillis(attempt: Int): Long {
+        val base = props.retryBackoffMs.coerceAtLeast(0)
+        val exp = base shl (attempt - 1) // base * 2^(attempt-1)
+        return exp + Random.nextLong(0, 500)
+    }
+
+    /** 인터럽트를 보존하는 sleep. */
+    private fun sleep(millis: Long) {
+        try {
+            Thread.sleep(millis)
+        } catch (ie: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
     }
 
     /** 한국어 회의 요약 프롬프트 조립. 회의 제목은 요약 편향을 막기 위해 프롬프트에서 제외한다(대화 내용만으로 요약). */
