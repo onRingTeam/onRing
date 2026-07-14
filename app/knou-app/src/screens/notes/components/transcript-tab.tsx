@@ -5,7 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { translate } from '@/lib/translate';
+import { detectLang, translate } from '@/lib/translate';
 import { useSettingsStore } from '@/store';
 import { fromBackendLang, type MeetingMessageDto } from '@/types/meeting';
 import { SPEAKER_COLORS } from './summary-tab';
@@ -16,6 +16,11 @@ interface TransState {
   text: string | null;
   /** 번역이 오래 걸려(모델 다운로드 추정) '다운로드 중' 안내를 표시할지. */
   downloading: boolean;
+  /**
+   * 원문이 이미 내 설정 언어라 번역할 필요가 없는 상태.
+   * (text=null 이지만 '실패'가 아님 — 실패 문구 대신 원문을 그대로 노출한다.)
+   */
+  sameLang: boolean;
 }
 
 /**
@@ -55,9 +60,27 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
   const onTranslate = useCallback(
     async (m: MeetingMessageDto) => {
       if (trans[m.messageId]?.loading) return; // 진행 중이면 무시
+
+      // 원문 언어 결정: 서버가 알려준 lang 우선, 없으면 스크립트 기반 자동 감지로 폴백.
+      // 단, 저장된 lang 이 타깃과 같으면 실제 내용을 재감지해 오탐을 보정한다
+      // (예: 'ko' 로 태깅됐지만 실제론 영어인 "Hey" → en 으로 재감지되어 번역 시도).
+      let sourceLang = m.lang ? fromBackendLang(m.lang) : detectLang(m.original);
+      if (sourceLang === targetLang) sourceLang = detectLang(m.original);
+
+      // 재감지 후에도 원문이 이미 내 언어면 번역할 게 없다 → 원문 그대로 노출(실패 아님).
+      if (sourceLang === targetLang) {
+        setTrans((p) => ({
+          ...p,
+          [m.messageId]: { loading: false, text: null, downloading: false, sameLang: true },
+        }));
+        return;
+      }
+
       // 누를 때마다 설정 언어(myLanguage)로 새로 번역 — 이전에 실패했어도 그대로 재시도.
-      // 서버가 원문 언어(lang)를 알려주면 그대로 쓰고, 과거 데이터라 없으면 스크립트 기반 자동 감지로 폴백.
-      setTrans((p) => ({ ...p, [m.messageId]: { loading: true, text: null, downloading: false } }));
+      setTrans((p) => ({
+        ...p,
+        [m.messageId]: { loading: true, text: null, downloading: false, sameLang: false },
+      }));
       // 번역이 오래 걸리면(=모델 최초 다운로드) '다운로드 중' 안내를 켠다. 빠르면(모델 보유) 타이머 취소.
       const slowTimer = setTimeout(() => {
         setTrans((p) => {
@@ -66,10 +89,12 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
           return { ...p, [m.messageId]: { ...cur, downloading: true } };
         });
       }, MODEL_DOWNLOAD_HINT_DELAY_MS);
-      const sourceLang = m.lang ? fromBackendLang(m.lang) : undefined;
       const result = await translate(m.original, targetLang, sourceLang);
       clearTimeout(slowTimer);
-      setTrans((p) => ({ ...p, [m.messageId]: { loading: false, text: result, downloading: false } }));
+      setTrans((p) => ({
+        ...p,
+        [m.messageId]: { loading: false, text: result, downloading: false, sameLang: false },
+      }));
     },
     [trans, targetLang],
   );
@@ -140,7 +165,9 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
                         type="small"
                         style={{ color: t.text ? colors.accent : colors.textSecondary }}
                       >
-                        {t.text ?? '번역에 실패했어요. 다시 눌러 주세요.'}
+                        {t.sameLang
+                          ? m.original
+                          : (t.text ?? '번역에 실패했어요. 다시 눌러 주세요.')}
                       </ThemedText>
                     </View>
                   )}

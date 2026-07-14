@@ -23,6 +23,31 @@ export function detectLang(text: string): LangCode {
   return 'en';
 }
 
+/**
+ * 번역/모델 다운로드가 이 시간(ms)을 넘기면 실패로 간주하고 중단한다.
+ * ML Kit 모델 다운로드가 멈추면(stall) 네이티브 Promise 가 영원히 resolve 되지 않아
+ * 호출부가 무한 로딩에 갇히는 문제를 막기 위한 안전장치. 모델 최초 다운로드(수십 초)는
+ * 통과시키되, 그보다 오래 걸리면 끊고 재시도(재번역)로 회복할 수 있게 한다.
+ */
+const TRANSLATE_TIMEOUT_MS = 60_000;
+
+/** p 가 ms 안에 끝나지 않으면 reject. 성공 시 결과 그대로 통과. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('translate-timeout')), ms);
+    p.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
 
 // TODO :: 외국어 번역 static 메소드
 /**import { translate } from '@/lib/translate';
@@ -50,12 +75,15 @@ export async function translate(
   const from = sourceLang ?? detectLang(text);
   if (from === targetLang || Platform.OS === 'web') return null;
   try {
-    const result = await TranslateText.translate({
-      text,
-      sourceLanguage: LANG_TO_MLKIT[from],
-      targetLanguage: LANG_TO_MLKIT[targetLang],
-      downloadModelIfNeeded: true,
-    });
+    const result = await withTimeout(
+      TranslateText.translate({
+        text,
+        sourceLanguage: LANG_TO_MLKIT[from],
+        targetLanguage: LANG_TO_MLKIT[targetLang],
+        downloadModelIfNeeded: true,
+      }),
+      TRANSLATE_TIMEOUT_MS,
+    );
     return String(result);
   } catch (e) {
     console.warn('[translate] 번역 실패', from, '→', targetLang, e);
@@ -68,13 +96,17 @@ let prefetched = false;
 /** ko→target 더미 번역으로 해당 언어 모델을 확보. 성공 여부 반환(실패해도 throw 안 함). */
 async function downloadModel(target: Exclude<LangCode, 'ko'>): Promise<boolean> {
   try {
-    // 이미 있으면 즉시 통과, 없으면 다운로드 유도.
-    await TranslateText.translate({
-      text: '.',
-      sourceLanguage: TranslateLanguage.KOREAN,
-      targetLanguage: LANG_TO_MLKIT[target],
-      downloadModelIfNeeded: true,
-    });
+    // 이미 있으면 즉시 통과, 없으면 다운로드 유도. 멈춘 다운로드로 프리페치가 영원히
+    // pending 되지 않게 타임아웃을 건다(실패해도 false 반환 → 다음 실행에서 재시도).
+    await withTimeout(
+      TranslateText.translate({
+        text: '.',
+        sourceLanguage: TranslateLanguage.KOREAN,
+        targetLanguage: LANG_TO_MLKIT[target],
+        downloadModelIfNeeded: true,
+      }),
+      TRANSLATE_TIMEOUT_MS,
+    );
     return true;
   } catch (e) {
     console.warn('[translate] 모델 프리페치 실패:', target, e);
