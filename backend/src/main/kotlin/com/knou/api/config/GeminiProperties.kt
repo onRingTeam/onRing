@@ -16,6 +16,18 @@ data class GeminiProperties(
     /** 사용 모델. 경량 기본값. */
     var model: String = "gemini-2.5-flash-lite",
 
+    /**
+     * 주 모델이 과부하(503)로 소진되면 1회 시도할 폴백 모델.
+     * 빈 문자열이거나 주 모델과 같으면 폴백을 생략한다.
+     */
+    var fallbackModel: String = "gemini-2.5-flash",
+
+    /** 주 모델 최대 시도 횟수(최초 1 + 재시도). 재시도 가능한 오류(503/429/5xx·타임아웃)에만 적용. */
+    var maxAttempts: Int = 3,
+
+    /** 지수 백오프 기준 대기(ms). n번째 재시도 전 retryBackoffMs * 2^(n-1) + 지터 만큼 대기. */
+    var retryBackoffMs: Long = 2_000,
+
     /** 연결 타임아웃(ms). */
     var connectTimeoutMs: Long = 10_000,
 
