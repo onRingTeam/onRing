@@ -1,6 +1,7 @@
 package com.knou.api.websocket
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.knou.api.dto.common.Language
 import com.knou.api.dto.meeting.MeetingMessageResponse
 import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Component
@@ -30,7 +31,7 @@ class MeetingChatBuffer(
     private val idSequence = AtomicLong(0)
 
     /** 메시지 보관. 부여된 messageId 를 포함한 완성 메시지를 반환한다. */
-    fun append(meetingId: Long, senderId: Long, senderName: String, message: String, sentAt: LocalDateTime): MeetingMessageResponse {
+    fun append(meetingId: Long, senderId: Long, senderName: String, message: String, lang: Language?, sentAt: LocalDateTime): MeetingMessageResponse {
         val stored = MeetingMessageResponse(
             messageId = idSequence.incrementAndGet(),
             userId = senderId,
@@ -39,6 +40,7 @@ class MeetingChatBuffer(
             original = message,
             // TODO Phase 4-2: 조회자 언어로 번역 제공
             translated = null,
+            lang = lang,
         )
         val list = buffers.computeIfAbsent(meetingId) { mutableListOf() }
         synchronized(list) {

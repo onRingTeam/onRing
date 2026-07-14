@@ -47,6 +47,7 @@ class MeetingTranscriptService(
                 spokenAt = msg.spokenAt,
                 original = msg.original,
                 translated = msg.translated,
+                lang = msg.lang,
             )
         }
         messageRepository.saveAll(entities)
@@ -73,6 +74,7 @@ class MeetingTranscriptService(
                     spokenAt = entity.spokenAt,
                     original = entity.original,
                     translated = entity.translated,
+                    lang = entity.lang,
                 )
             }
     }

@@ -139,7 +139,7 @@ CREATE TABLE meeting_message (
     sender_name  VARCHAR(100) NOT NULL                COMMENT '발화자명 (발화 시점 비정규화)',
     sent_at      DATETIME     NOT NULL                COMMENT '발화 시각',
     message      TEXT         NOT NULL                COMMENT '발화 텍스트(원문)',
-    lang         VARCHAR(30)  NULL                    COMMENT '원문 언어 (현재 미사용 — 번역 기능 대비)',
+    lang         VARCHAR(30)  NULL                    COMMENT '원문 언어',
     translated   TEXT         NULL                    COMMENT '번역문 (현재 미사용 — 번역 기능 대비)',
     created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성일시',
     PRIMARY KEY (message_id),

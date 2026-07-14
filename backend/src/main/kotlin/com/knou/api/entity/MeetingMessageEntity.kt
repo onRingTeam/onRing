@@ -1,7 +1,10 @@
 package com.knou.api.entity
 
+import com.knou.api.dto.common.Language
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
+import jakarta.persistence.EnumType
+import jakarta.persistence.Enumerated
 import jakarta.persistence.FetchType
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
@@ -26,8 +29,6 @@ import java.time.LocalDateTime
  *
  * 컬럼 매핑: 발화 텍스트·발화자명·발화 시각은 기존 채팅 스키마의 message/sender_name/sent_at
  * 컬럼을 재사용한다(속성명은 DTO 계약에 맞춰 original/speakerName/spokenAt 유지).
- * lang(원문 언어) 컬럼은 DB 에 존재하나 현재 매핑하지 않는다 — 실시간 번역 기능 도입 시 사용 예정
- * (현재 [com.knou.api.websocket.MeetingChatBuffer.append] 가 MessageRequest.lang 을 버린다).
  */
 @Entity
 @Table(
@@ -54,6 +55,10 @@ class MeetingMessageEntity(
 
     @Column(name = "translated", columnDefinition = "TEXT")
     var translated: String? = null,
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "lang", length = 30)
+    var lang: Language? = null,
 ) {
 
     @Id

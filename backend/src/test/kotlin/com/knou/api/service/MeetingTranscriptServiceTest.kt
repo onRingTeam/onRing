@@ -30,7 +30,7 @@ class MeetingTranscriptServiceTest {
 
     private fun message(userId: Long, name: String, text: String, at: LocalDateTime) = MeetingMessageResponse(
         messageId = 0, userId = userId, speakerName = name,
-        spokenAt = at, original = text, translated = null,
+        spokenAt = at, original = text, translated = null, lang = null,
     )
 
     @Test
