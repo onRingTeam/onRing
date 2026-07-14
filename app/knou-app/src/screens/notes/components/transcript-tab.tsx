@@ -7,7 +7,7 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { translate } from '@/lib/translate';
 import { useSettingsStore } from '@/store';
-import type { MeetingMessageDto } from '@/types/meeting';
+import { fromBackendLang, type MeetingMessageDto } from '@/types/meeting';
 import { SPEAKER_COLORS } from './summary-tab';
 
 /** 메시지별 번역 상태. text=마지막 번역 결과(실패 시 null). 버튼을 누를 때마다 새로 번역한다. */
@@ -47,8 +47,10 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
     async (m: MeetingMessageDto) => {
       if (trans[m.messageId]?.loading) return; // 진행 중이면 무시
       // 누를 때마다 설정 언어(myLanguage)로 새로 번역 — 이전에 실패했어도 그대로 재시도.
+      // 서버가 원문 언어(lang)를 알려주면 그대로 쓰고, 과거 데이터라 없으면 스크립트 기반 자동 감지로 폴백.
       setTrans((p) => ({ ...p, [m.messageId]: { loading: true, text: null } }));
-      const result = await translate(m.original, targetLang);
+      const sourceLang = m.lang ? fromBackendLang(m.lang) : undefined;
+      const result = await translate(m.original, targetLang, sourceLang);
       setTrans((p) => ({ ...p, [m.messageId]: { loading: false, text: result } }));
     },
     [trans, targetLang],

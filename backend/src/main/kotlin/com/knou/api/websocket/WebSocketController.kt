@@ -33,7 +33,7 @@ class WebSocketController(
         @Payload request: MessageRequest,
     ): MessageResponse {
         val sentAt = LocalDateTime.now()
-        chatBuffer.append(meetingId, request.senderId, request.senderName, request.message, sentAt)
+        chatBuffer.append(meetingId, request.senderId, request.senderName, request.message, request.lang, sentAt)
 
         return MessageResponse(
             senderId = request.senderId,

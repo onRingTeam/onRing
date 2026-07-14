@@ -35,7 +35,7 @@ class MeetingSummaryServiceTest {
 
     private fun message(userId: Long, name: String, text: String) = MeetingMessageResponse(
         messageId = userId, userId = userId, speakerName = name,
-        spokenAt = LocalDateTime.now(), original = text, translated = null,
+        spokenAt = LocalDateTime.now(), original = text, translated = null, lang = null,
     )
 
     @Test

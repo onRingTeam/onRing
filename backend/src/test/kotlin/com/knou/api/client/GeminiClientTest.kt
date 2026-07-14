@@ -34,7 +34,7 @@ class GeminiClientTest {
     private val messages = listOf(
         MeetingMessageResponse(
             messageId = 0, userId = 10, speakerName = "고윤아",
-            spokenAt = LocalDateTime.of(2026, 7, 14, 14, 0), original = "안녕하세요", translated = null,
+            spokenAt = LocalDateTime.of(2026, 7, 14, 14, 0), original = "안녕하세요", translated = null, lang = null,
         ),
     )
 

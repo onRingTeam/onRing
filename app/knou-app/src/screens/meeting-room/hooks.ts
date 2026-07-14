@@ -146,7 +146,7 @@ export function useMeetingConnection(
           .then((missed) => {
             for (const m of missed) {
               lastSentAtRef.current = m.spokenAt;
-              addCaption(toCaption({ senderId: m.userId, senderName: m.speakerName, message: m.original, lang: null, sentAt: m.spokenAt }));
+              addCaption(toCaption({ senderId: m.userId, senderName: m.speakerName, message: m.original, lang: m.lang, sentAt: m.spokenAt }));
             }
           })
           .catch((e) => console.warn('[chat] 놓친 메시지 복구 실패', e));

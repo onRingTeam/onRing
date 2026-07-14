@@ -29,7 +29,7 @@ class MeetingSummaryRegenerationListenerTest {
 
     private fun message(text: String) = MeetingMessageResponse(
         messageId = 0, userId = 10, speakerName = "고윤아",
-        spokenAt = LocalDateTime.of(2026, 7, 14, 14, 0), original = text, translated = null,
+        spokenAt = LocalDateTime.of(2026, 7, 14, 14, 0), original = text, translated = null, lang = null,
     )
 
     private val result = MeetingSummaryResult(

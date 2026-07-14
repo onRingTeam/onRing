@@ -161,6 +161,9 @@ data class MeetingMessageResponse(
 
     @field:Schema(description = "번역문 (조회자 언어 기준)", example = "Hello")
     val translated: String?,
+
+    @field:Schema(description = "원문 언어")
+    val lang: Language?,
 )
 
 // ===========================================================================

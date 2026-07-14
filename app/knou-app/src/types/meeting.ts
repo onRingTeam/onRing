@@ -181,4 +181,6 @@ export interface MeetingMessageDto {
   spokenAt: string;
   original: string;
   translated: string | null;
+  /** 원문 언어. 과거 데이터는 없을 수 있어 null 허용. */
+  lang: BackendLang | null;
 }
