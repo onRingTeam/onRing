@@ -7,7 +7,6 @@ import com.knou.api.config.GeminiProperties
 import com.knou.api.dto.meeting.MeetingMessageResponse
 import org.slf4j.LoggerFactory
 import org.springframework.http.MediaType
-import org.springframework.http.client.SimpleClientHttpRequestFactory
 import org.springframework.stereotype.Component
 import org.springframework.web.client.HttpClientErrorException
 import org.springframework.web.client.HttpServerErrorException
@@ -39,18 +38,10 @@ data class MeetingSummaryResult(
 class GeminiClient(
     private val props: GeminiProperties,
     private val objectMapper: ObjectMapper,
+    /** Gemini 전용 RestClient. [com.knou.api.config.GeminiClientConfig] 가 baseUrl·타임아웃을 구성해 주입한다. */
+    private val restClient: RestClient,
 ) {
     private val log = LoggerFactory.getLogger(javaClass)
-
-    private val restClient: RestClient = RestClient.builder()
-        .baseUrl("https://generativelanguage.googleapis.com/v1beta")
-        .requestFactory(
-            SimpleClientHttpRequestFactory().apply {
-                setConnectTimeout(props.connectTimeoutMs.toInt())
-                setReadTimeout(props.readTimeoutMs.toInt())
-            },
-        )
-        .build()
 
     /** apiKey 설정 여부. 리스너가 호출 전 확인해 미설정 시 요약을 생략한다. */
     fun isConfigured(): Boolean = props.apiKey.isNotBlank()
