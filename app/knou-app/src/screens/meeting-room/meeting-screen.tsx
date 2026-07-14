@@ -17,7 +17,6 @@ import { MeetingHeader } from './components/meeting-header';
 import { LanguageBar } from './components/language-bar';
 import { CaptionStream } from './components/caption-stream';
 import { ChatInputBar } from './components/chat-input-bar';
-import { TranslationStatusBanner } from './components/translation-status-banner';
 import { useEndMeeting, useMeetingConnection, useMeetingSession } from './hooks';
 
 export function MeetingScreen() {
@@ -163,9 +162,6 @@ export function MeetingScreen() {
       />
 
       <LanguageBar selected={myLang} onSelect={setSelectedLang} />
-
-      {/* 번역 모델(ML Kit) 다운로드 진행 안내 — 받는 중일 때만 노출(고장 아님을 알림) */}
-      <TranslationStatusBanner />
 
       {/* 입력창이 키보드에 가리지 않도록 키보드 높이만큼 하단을 밀어올린다.
           (Android edge-to-edge 에선 adjustResize 가 자동으로 밀지 않으므로 필요) */}
