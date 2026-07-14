@@ -6,7 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { translate } from '@/lib/translate';
-import { useSettingsStore, useTranslationModelStore } from '@/store';
+import { useSettingsStore } from '@/store';
 import { fromBackendLang, type MeetingMessageDto } from '@/types/meeting';
 import { SPEAKER_COLORS } from './summary-tab';
 
@@ -14,7 +14,16 @@ import { SPEAKER_COLORS } from './summary-tab';
 interface TransState {
   loading: boolean;
   text: string | null;
+  /** 번역이 오래 걸려(모델 다운로드 추정) '다운로드 중' 안내를 표시할지. */
+  downloading: boolean;
 }
+
+/**
+ * 이 시간(ms)을 넘겨도 번역이 안 끝나면 ML Kit 모델을 다운로드 중인 것으로 보고 안내를 띄운다.
+ * 모델이 이미 있으면 온디바이스 번역은 1초 안쪽이라, 이 지연을 넘는 건 최초 다운로드(수십 초)뿐이다.
+ * → 모델이 있는 언어(예: 영어)는 안내가 뜨지 않고, 정말 받는 중일 때만 뜬다.
+ */
+const MODEL_DOWNLOAD_HINT_DELAY_MS = 2000;
 
 export interface TranscriptTabProps {
   messages: MeetingMessageDto[];
@@ -38,11 +47,6 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
   const targetLang = useSettingsStore((s) => s.myLanguage);
   const [trans, setTrans] = useState<Record<number, TransState>>({});
 
-  // ML Kit 번역 모델은 최초 1회 런타임 다운로드(언어당 ~30MB)가 필요해 느릴 수 있다.
-  // 다운로드가 진행 중이면 번역 스피너 옆에 '모델 다운로드 중'을 표시해
-  // "고장이 아니라 받는 중"임을 사용자에게 알린다. (translate.ts 가 갱신하는 상태)
-  const isModelDownloading = useTranslationModelStore((s) => s.downloading.length > 0);
-
   // 설정 언어가 바뀌면 기존 번역 캐시는 무효 → 초기화.
   useEffect(() => {
     setTrans({});
@@ -53,10 +57,19 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
       if (trans[m.messageId]?.loading) return; // 진행 중이면 무시
       // 누를 때마다 설정 언어(myLanguage)로 새로 번역 — 이전에 실패했어도 그대로 재시도.
       // 서버가 원문 언어(lang)를 알려주면 그대로 쓰고, 과거 데이터라 없으면 스크립트 기반 자동 감지로 폴백.
-      setTrans((p) => ({ ...p, [m.messageId]: { loading: true, text: null } }));
+      setTrans((p) => ({ ...p, [m.messageId]: { loading: true, text: null, downloading: false } }));
+      // 번역이 오래 걸리면(=모델 최초 다운로드) '다운로드 중' 안내를 켠다. 빠르면(모델 보유) 타이머 취소.
+      const slowTimer = setTimeout(() => {
+        setTrans((p) => {
+          const cur = p[m.messageId];
+          if (!cur?.loading) return p; // 이미 끝났으면 무시
+          return { ...p, [m.messageId]: { ...cur, downloading: true } };
+        });
+      }, MODEL_DOWNLOAD_HINT_DELAY_MS);
       const sourceLang = m.lang ? fromBackendLang(m.lang) : undefined;
       const result = await translate(m.original, targetLang, sourceLang);
-      setTrans((p) => ({ ...p, [m.messageId]: { loading: false, text: result } }));
+      clearTimeout(slowTimer);
+      setTrans((p) => ({ ...p, [m.messageId]: { loading: false, text: result, downloading: false } }));
     },
     [trans, targetLang],
   );
@@ -142,7 +155,7 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
                     {t?.loading ? (
                       <>
                         <ActivityIndicator size="small" color={colors.accent} />
-                        {isModelDownloading && (
+                        {t.downloading && (
                           <ThemedText type="small" themeColor="textSecondary" style={styles.downloadingText}>
                             번역 모델 다운로드 중…
                           </ThemedText>

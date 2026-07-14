@@ -2,7 +2,6 @@ import { Platform } from 'react-native';
 import TranslateText, { TranslateLanguage } from '@react-native-ml-kit/translate-text';
 
 import type { LangCode } from '@/types/meeting';
-import { useTranslationModelStore } from '@/store/translation-store';
 
 /** LangCode → ML Kit 언어 코드 */
 const LANG_TO_MLKIT: Record<LangCode, TranslateLanguage> = {
@@ -50,13 +49,6 @@ export async function translate(
 ): Promise<string | null> {
   const from = sourceLang ?? detectLang(text);
   if (from === targetLang || Platform.OS === 'web') return null;
-
-  // 프리페치가 끝나기 전(ready=false)엔 이 호출이 모델 다운로드를 유발할 수 있으므로
-  // '다운로드 중' 상태로 표시해 사용자에게 진행 상황을 알린다. 프리페치 완료 후엔 모델이
-  // 이미 있어 즉시 번역되므로 표시하지 않는다(불필요한 배너 깜빡임 방지).
-  const store = useTranslationModelStore.getState();
-  const track = !store.ready;
-  if (track) store.startDownload(targetLang);
   try {
     const result = await TranslateText.translate({
       text,
@@ -68,8 +60,6 @@ export async function translate(
   } catch (e) {
     console.warn('[translate] 번역 실패', from, '→', targetLang, e);
     return null;
-  } finally {
-    if (track) useTranslationModelStore.getState().finishDownload(targetLang);
   }
 }
 
@@ -77,8 +67,6 @@ let prefetched = false;
 
 /** ko→target 더미 번역으로 해당 언어 모델을 확보. 성공 여부 반환(실패해도 throw 안 함). */
 async function downloadModel(target: Exclude<LangCode, 'ko'>): Promise<boolean> {
-  const { startDownload, finishDownload } = useTranslationModelStore.getState();
-  startDownload(target);
   try {
     // 이미 있으면 즉시 통과, 없으면 다운로드 유도.
     await TranslateText.translate({
@@ -91,8 +79,6 @@ async function downloadModel(target: Exclude<LangCode, 'ko'>): Promise<boolean> 
   } catch (e) {
     console.warn('[translate] 모델 프리페치 실패:', target, e);
     return false;
-  } finally {
-    finishDownload(target);
   }
 }
 
@@ -112,6 +98,4 @@ export async function prefetchTranslationModels(): Promise<void> {
     (['en', 'ja', 'zh'] as const).map((target) => downloadModel(target)),
   );
   prefetched = results.every(Boolean);
-  // 전부 성공해야 ready — 하나라도 실패하면 다음 실행에서 재시도하고, 그때 다시 배너를 노출한다.
-  useTranslationModelStore.getState().setReady(prefetched);
 }
