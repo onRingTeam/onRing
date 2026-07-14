@@ -3,6 +3,7 @@ package com.knou.api.service
 import com.knou.api.client.AttendeeInfo
 import com.knou.api.client.MeetingSummaryResult
 import com.knou.api.dto.meeting.MeetingMessageResponse
+import com.knou.api.entity.MeetingAttendanceEntity
 import com.knou.api.repository.MeetingAttendanceRepository
 import com.knou.api.repository.MeetingRepository
 import org.slf4j.LoggerFactory
@@ -56,9 +57,20 @@ class MeetingSummaryService(
             }
         }
 
-        val attendees = attendances.map { AttendeeInfo(it.user.userId!!, it.user.name) }
-        return MeetingContext(attendees = attendees)
+        return MeetingContext(attendees = attendances.map { it.toAttendeeInfo() })
     }
+
+    /**
+     * 요약 프롬프트에 넘길 참석자 목록만 조회한다(발화 수 집계 없이).
+     * 온디맨드 재생성([com.knou.api.websocket.MeetingSummaryRegenerationListener])이
+     * 발화 수는 이미 확정된 상태에서 참석자만 필요할 때 재사용한다.
+     */
+    @Transactional(readOnly = true)
+    fun attendeesOf(meetingId: Long): List<AttendeeInfo> =
+        attendanceRepository.findAllByMeeting_MeetingId(meetingId).map { it.toAttendeeInfo() }
+
+    private fun MeetingAttendanceEntity.toAttendeeInfo() =
+        AttendeeInfo(user.userId!!, user.name)
 
     /**
      * TX2: LLM 결과 저장. meeting.summary 저장 + userId 로 매칭되는 참석자의 action_item 저장(참석자당 1건).

@@ -15,6 +15,8 @@ import com.knou.api.repository.MeetingAttendanceRepository
 import com.knou.api.repository.MeetingRepository
 import com.knou.api.repository.UserRepository
 import com.knou.api.websocket.MeetingChatBuffer
+import com.knou.api.websocket.MeetingSummaryMissingEvent
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -37,6 +39,7 @@ class MeetingService(
     private val userRepository: UserRepository,
     private val attendanceRepository: MeetingAttendanceRepository,
     private val chatBuffer: MeetingChatBuffer,
+    private val eventPublisher: ApplicationEventPublisher,
 ) {
 
     /**
@@ -214,7 +217,10 @@ class MeetingService(
 
     /**
      * 상세회의 - AI 요약. 회의 기본 정보 + 참석자 기반 화자별 통계를 반환한다. (화면정의서 4-b, 4-c)
-     * (AI 요약 내용·액션아이템은 추후 배치가 채움 — 없으면 null/0.)
+     *
+     * 종료된 회의인데 요약이 아직 없으면([MeetingSummaryMissingEvent] 발행) 온디맨드 재생성을 트리거한다.
+     * 회의 직후 요약이 실패(예: Gemini 503)해도 상세를 다시 열면 그때 백그라운드로 재생성되고,
+     * 프론트 폴링이 완료된 요약을 받아 표시한다.
      *
      * @throws ResponseStatusException 404(회의 없음)
      */
@@ -236,6 +242,11 @@ class MeetingService(
             )
         }
         val languageCount = attendances.mapNotNull { it.translateLanguage }.distinct().size
+
+        // 종료됐는데 요약이 없으면 온디맨드 재생성 트리거 (실제 작업은 @Async 리스너가 별도 스레드에서 수행)
+        if (meeting.status == MeetingStatus.ENDED.name && meeting.summary == null) {
+            eventPublisher.publishEvent(MeetingSummaryMissingEvent(meetingId))
+        }
 
         return MeetingDetailResponse(
             meetingId = meeting.meetingId!!,
