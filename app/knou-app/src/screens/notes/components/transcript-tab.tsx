@@ -6,7 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { translate } from '@/lib/translate';
-import { useSettingsStore } from '@/store';
+import { useSettingsStore, useTranslationModelStore } from '@/store';
 import { fromBackendLang, type MeetingMessageDto } from '@/types/meeting';
 import { SPEAKER_COLORS } from './summary-tab';
 
@@ -37,6 +37,11 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
   // 번역 대상 언어 = 설정에서 고른 내 언어(스토어 관리).
   const targetLang = useSettingsStore((s) => s.myLanguage);
   const [trans, setTrans] = useState<Record<number, TransState>>({});
+
+  // ML Kit 번역 모델은 최초 1회 런타임 다운로드(언어당 ~30MB)가 필요해 느릴 수 있다.
+  // 다운로드가 진행 중이면 번역 스피너 옆에 '모델 다운로드 중'을 표시해
+  // "고장이 아니라 받는 중"임을 사용자에게 알린다. (translate.ts 가 갱신하는 상태)
+  const isModelDownloading = useTranslationModelStore((s) => s.downloading.length > 0);
 
   // 설정 언어가 바뀌면 기존 번역 캐시는 무효 → 초기화.
   useEffect(() => {
@@ -135,7 +140,14 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
                     onPress={() => onTranslate(m)}
                   >
                     {t?.loading ? (
-                      <ActivityIndicator size="small" color={colors.accent} />
+                      <>
+                        <ActivityIndicator size="small" color={colors.accent} />
+                        {isModelDownloading && (
+                          <ThemedText type="small" themeColor="textSecondary" style={styles.downloadingText}>
+                            번역 모델 다운로드 중…
+                          </ThemedText>
+                        )}
+                      </>
                     ) : (
                       <>
                         <Feather name="globe" size={13} color={colors.accent} />
@@ -210,5 +222,8 @@ const styles = StyleSheet.create({
   translateText: {
     fontSize: 12,
     fontWeight: '600',
+  },
+  downloadingText: {
+    fontSize: 12,
   },
 });
