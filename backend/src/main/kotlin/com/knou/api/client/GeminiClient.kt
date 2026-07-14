@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
 import com.knou.api.config.GeminiProperties
+import com.knou.api.dto.common.Language
 import com.knou.api.dto.meeting.MeetingMessageResponse
 import org.slf4j.LoggerFactory
 import org.springframework.http.MediaType
@@ -60,8 +61,6 @@ class GeminiClient(
         attendees: List<AttendeeInfo>,
         messages: List<MeetingMessageResponse>,
     ): MeetingSummaryResult {
-        check(props.apiKey.isNotBlank()) { "GEMINI_API_KEY 미설정" }
-
         val prompt = buildPrompt(attendees, messages)
         val requestBody = mapOf(
             "contents" to listOf(mapOf("parts" to listOf(mapOf("text" to prompt)))),
@@ -71,6 +70,35 @@ class GeminiClient(
                 "responseSchema" to RESPONSE_SCHEMA,
             ),
         )
+        val json = generateText(requestBody)
+        return objectMapper.readValue(json)
+    }
+
+    /**
+     * 텍스트 한 건을 [targetLang] 로 번역한다(종료 회의 상세 '전체 대화' 탭의 개별 메시지 번역).
+     * 요약과 동일한 재시도/폴백 회복력([generateText])을 공유한다.
+     *
+     * @throws IllegalStateException apiKey 미설정 또는 응답이 비어있음
+     * @throws org.springframework.web.client.RestClientException 모든 시도·폴백 실패
+     */
+    fun translate(text: String, targetLang: Language): String {
+        val requestBody = mapOf(
+            "contents" to listOf(mapOf("parts" to listOf(mapOf("text" to buildTranslatePrompt(text, targetLang))))),
+            "generationConfig" to mapOf(
+                "temperature" to 0.0,
+                "responseMimeType" to "text/plain",
+            ),
+        )
+        return generateText(requestBody).trim()
+    }
+
+    /**
+     * 주 모델([GeminiProperties.model])로 [GeminiProperties.maxAttempts] 회까지 재시도(재시도 가능한
+     * 오류에만 지수 백오프+지터)하고, 소진 시 [GeminiProperties.fallbackModel] 로 1회 폴백해
+     * generateContent 응답의 원시 텍스트를 반환한다. 요약·번역이 공유하는 회복력 실행기.
+     */
+    private fun generateText(requestBody: Map<String, Any>): String {
+        check(props.apiKey.isNotBlank()) { "GEMINI_API_KEY 미설정" }
 
         // 주 모델 재시도 → 소진 시 폴백 모델 1회.
         val maxAttempts = props.maxAttempts.coerceAtLeast(1)
@@ -102,8 +130,8 @@ class GeminiClient(
         throw lastError
     }
 
-    /** 지정 모델로 generateContent 1회 호출 후 구조화 JSON 을 파싱한다. */
-    private fun callModel(model: String, requestBody: Map<String, Any>): MeetingSummaryResult {
+    /** 지정 모델로 generateContent 1회 호출 후 응답의 원시 텍스트를 반환한다. */
+    private fun callModel(model: String, requestBody: Map<String, Any>): String {
         val response = restClient.post()
             .uri("/models/{model}:generateContent", model)
             .header("x-goog-api-key", props.apiKey)
@@ -112,10 +140,8 @@ class GeminiClient(
             .retrieve()
             .body<GeminiResponse>()
 
-        val json = response?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
+        return response?.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
             ?: throw IllegalStateException("Gemini 응답이 비어있습니다.")
-
-        return objectMapper.readValue(json)
     }
 
     /**
@@ -173,6 +199,18 @@ class GeminiClient(
         """.trimIndent()
     }
 
+    /** 단일 텍스트 번역 프롬프트. 번역문만 반환하도록 지시(따옴표·설명 배제). */
+    private fun buildTranslatePrompt(text: String, targetLang: Language): String {
+        val langName = LANG_DISPLAY_NAME[targetLang] ?: targetLang.name
+        return """
+            다음 텍스트를 $langName 로 자연스럽게 번역하세요.
+            번역문만 출력하고 따옴표, 설명, 부가 문구는 넣지 마세요. 이미 $langName 이면 원문을 그대로 반환하세요.
+
+            텍스트:
+            $text
+        """.trimIndent()
+    }
+
     /** Gemini 응답의 필요한 부분만 매핑. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     private data class GeminiResponse(val candidates: List<Candidate>? = null) {
@@ -188,6 +226,14 @@ class GeminiClient(
 
     private companion object {
         val TIME_FMT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+        /** 번역 프롬프트에 넣을 대상 언어 표기(모델이 잘 인식하도록 각 언어 자국어명). */
+        val LANG_DISPLAY_NAME = mapOf(
+            Language.KO to "한국어",
+            Language.EN to "English",
+            Language.JA to "日本語",
+            Language.ZH to "中文",
+        )
 
         /** 구조화 출력 스키마 (Gemini responseSchema — 타입은 대문자). */
         val RESPONSE_SCHEMA = mapOf(

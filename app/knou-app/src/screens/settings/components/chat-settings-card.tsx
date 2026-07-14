@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 
 import { Toggle } from '@/components/ui/toggle';
@@ -7,6 +7,7 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { LANGUAGES, LANG_EXAMPLE_TEXT } from '@/constants/languages';
 import { fromBackendLang, toBackendLang } from '@/types/meeting';
+import { useSettingsStore } from '@/store';
 import type { BackendFontSize, UserProfileResponse } from '@/types/settings';
 import { useUpdateChatSettings } from '../hooks';
 
@@ -20,11 +21,18 @@ const FONT_SIZES: { value: BackendFontSize; label: string; preview: number }[] =
 export function ChatSettingsCard({ profile }: { profile: UserProfileResponse }) {
   const colors = useTheme();
   const updateMutation = useUpdateChatSettings();
+  // 번역 대상 언어의 전역 소스. 전체 대화 탭 번역이 이 값을 읽는다.
+  const setMyLanguage = useSettingsStore((s) => s.setMyLanguage);
 
   // 프로필(서버)값을 초기값으로, 변경 즉시 mutation 호출 (낙관적 로컬 반영)
   const [language, setLanguage] = useState(fromBackendLang(profile.language));
   const [fontSize, setFontSize] = useState<BackendFontSize>(profile.fontSize);
   const [vibration, setVibration] = useState(profile.vibration);
+
+  // 서버 프로필 언어를 전역 스토어에 동기화 (재시작/최초 로그인 시 DB 값이 소스).
+  useEffect(() => {
+    setMyLanguage(fromBackendLang(profile.language));
+  }, [profile.language, setMyLanguage]);
 
   const persist = (next: { language?: typeof language; fontSize?: BackendFontSize; vibration?: boolean }) => {
     updateMutation.mutate({
@@ -69,7 +77,8 @@ export function ChatSettingsCard({ profile }: { profile: UserProfileResponse }) 
                   key={l.code}
                   onPress={() => {
                     setLanguage(l.code);
-                    persist({ language: l.code });
+                    setMyLanguage(l.code); // 스토어(전역) 동시 갱신
+                    persist({ language: l.code }); // DB(프로필) 동시 갱신
                   }}
                   activeOpacity={0.7}
                   style={[

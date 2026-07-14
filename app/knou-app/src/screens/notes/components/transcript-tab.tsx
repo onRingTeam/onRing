@@ -5,9 +5,9 @@ import { Feather } from '@expo/vector-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { translate } from '@/lib/translate';
 import { useSettingsStore } from '@/store';
 import type { MeetingMessageDto } from '@/types/meeting';
+import { translateText } from '../api';
 import { SPEAKER_COLORS } from './summary-tab';
 
 /** 메시지별 번역 상태. done=번역 시도 완료(결과 null 이어도 true), shown=표시 토글. */
@@ -31,7 +31,7 @@ function formatSpokenAt(spokenAt: string): string {
 
 /**
  * 상세회의 '전체 대화' 탭 — 발화자·시간·원문 조회. (화면정의서 4-d)
- * 메시지마다 '번역' 버튼 → 설정에서 고른 언어(myLanguage)로 온디바이스 번역(@/lib/translate).
+ * 메시지마다 '번역' 버튼 → 설정에서 고른 언어(myLanguage)로 백엔드 Gemini 번역(POST /api/translations).
  */
 export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabProps) {
   const colors = useTheme();
@@ -55,7 +55,13 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
         return;
       }
       setTrans((p) => ({ ...p, [m.messageId]: { loading: true, text: null, shown: true, done: false } }));
-      const result = await translate(m.original, targetLang);
+      // 설정 언어(myLanguage)로 백엔드 Gemini 번역 요청. 실패 시 text=null 로 폴백 안내.
+      let result: string | null = null;
+      try {
+        result = await translateText(m.original, targetLang);
+      } catch (e) {
+        console.warn('[transcript] 번역 실패', e);
+      }
       setTrans((p) => ({ ...p, [m.messageId]: { loading: false, text: result, shown: true, done: true } }));
     },
     [trans, targetLang],
@@ -127,7 +133,7 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
                         type="small"
                         style={{ color: t.text ? colors.accent : colors.textSecondary }}
                       >
-                        {t.text ?? '번역할 내용이 없어요.'}
+                        {t.text ?? '번역에 실패했어요.'}
                       </ThemedText>
                     </View>
                   )}
