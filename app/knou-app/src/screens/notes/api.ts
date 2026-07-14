@@ -1,5 +1,4 @@
-import type { LangCode, MeetingDetail, MeetingListItem, MeetingMessageDto } from '@/types/meeting';
-import { toBackendLang } from '@/types/meeting';
+import type { MeetingDetail, MeetingListItem, MeetingMessageDto } from '@/types/meeting';
 import { API_BASE } from '@/lib/config';
 import { authHeaders } from '@/lib/api-headers';
 
@@ -82,18 +81,4 @@ export async function toggleFavorite(meetingId: number): Promise<void> {
     headers: { ...authHeaders() },
   });
   if (!res.ok) throw new Error(`즐겨찾기 변경 실패 (${res.status})`);
-}
-
-/**
- * 텍스트 번역. 전체 대화 탭의 메시지를 설정 언어(myLanguage)로 Gemini 번역한다. (화면정의서 4-d)
- * POST /api/translations
- */
-export async function translateText(text: string, targetLang: LangCode): Promise<string> {
-  const res = await fetch(`${API_BASE}/api/translations`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify({ text, targetLang: toBackendLang(targetLang) }),
-  });
-  if (!res.ok) throw new Error(`번역 실패 (${res.status})`);
-  return ((await res.json()) as { translatedText: string }).translatedText;
 }
