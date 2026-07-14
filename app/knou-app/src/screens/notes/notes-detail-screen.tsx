@@ -1,5 +1,5 @@
 // 1. Import
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, View, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -35,6 +35,11 @@ export function NotesDetailScreen({ id, waitForSummary = false }: NotesDetailScr
 
   const meetingId = Number(id);
   const [tab, setTab] = useState<DetailTab>('summary');
+  // 상세보기 진입 시 항상 'AI 요약' 탭부터. 다른 회의로 전환돼 라우트가 재사용돼도(이전 탭 잔존 방지)
+  // id 가 바뀌면 요약 탭으로 리셋한다.
+  useEffect(() => {
+    setTab('summary');
+  }, [id]);
   const {
     data: detail,
     isLoading,
