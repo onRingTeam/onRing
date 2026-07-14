@@ -23,6 +23,7 @@ export function HomeScreen() {
 
   // 3. useState (페이지 내부 로컬 상태 )
   const [joinCode, setJoinCode] = useState('');
+  const [codeError, setCodeError] = useState<string | null>(null);
   const [greeting] = useState('안녕하세요,');
   const [showActiveConfirm, setShowActiveConfirm] = useState(false);
 
@@ -65,6 +66,7 @@ export function HomeScreen() {
   const handleJoinByCode = async () => {
     const code = joinCode.trim().toUpperCase();
     if (!code || joinMutation.isPending) return;
+    setCodeError(null);
     try {
       // 코드로 참여 — 진행중/종료/미존재 검증은 백엔드가 수행 (화면정의서 2-c-i)
       const room = await joinMutation.mutateAsync(code);
@@ -74,8 +76,9 @@ export function HomeScreen() {
         params: { meetingId: String(room.meetingId), code: room.meetingCode },
       });
     } catch (e) {
-      // TODO: 종료/미존재 코드 안내 alert (화면정의서 2-c-i-2, 2-c-i-3)
-      console.warn('[home] join 실패', e);
+      // 코드 불일치(404)/종료(409) → 입력창 인라인 에러로 안내 (화면정의서 2-c-i-2, 2-c-i-3)
+      const status = (e as { status?: number }).status;
+      setCodeError(status === 409 ? '이미 종료된 회의입니다.' : '코드를 찾을 수 없습니다.');
     }
   };
 
@@ -146,11 +149,21 @@ export function HomeScreen() {
             </ThemedText>
             <View style={styles.joinRow}>
               <TextInput
-                style={[styles.codeInput, { backgroundColor: colors.backgroundSelected, color: colors.text }]}
+                style={[
+                  styles.codeInput,
+                  {
+                    backgroundColor: colors.backgroundSelected,
+                    color: codeError ? colors.error : colors.text,
+                    borderColor: codeError ? colors.error : 'transparent',
+                  },
+                ]}
                 placeholder="회의 코드 입력..."
                 placeholderTextColor={colors.textSecondary}
                 value={joinCode}
-                onChangeText={setJoinCode}
+                onChangeText={(t) => {
+                  setJoinCode(t);
+                  if (codeError) setCodeError(null); // 다시 입력하면 에러 해제
+                }}
                 maxLength={6}
                 autoCapitalize="characters"
                 autoCorrect={false}
@@ -172,6 +185,11 @@ export function HomeScreen() {
                 </ThemedText>
               </TouchableOpacity>
             </View>
+            {codeError && (
+              <ThemedText type="small" themeColor="error" style={styles.codeErrorText}>
+                {codeError}
+              </ThemedText>
+            )}
           </View>
 
           {/* 최근 회의 */}

@@ -80,9 +80,14 @@ export const styles = StyleSheet.create({
   codeInput: {
     flex: 1,
     borderRadius: 12,
+    // 평상시 투명 테두리를 예약 → 에러 시 red 테두리로 바뀌어도 레이아웃이 흔들리지 않는다.
+    borderWidth: 1,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     fontSize: 14,
+  },
+  codeErrorText: {
+    marginTop: Spacing.two,
   },
   joinBtn: {
     borderRadius: 12,

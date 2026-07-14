@@ -2,6 +2,7 @@ package com.knou.api.client
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.knou.api.config.GeminiProperties
+import com.knou.api.dto.common.Language
 import com.knou.api.dto.meeting.MeetingMessageResponse
 import org.junit.jupiter.api.Test
 import org.springframework.http.HttpStatus
@@ -44,6 +45,12 @@ class GeminiClientTest {
             mapOf("candidates" to listOf(mapOf("content" to mapOf("parts" to listOf(mapOf("text" to inner)))))),
         )
     }
+
+    /** 임의 텍스트를 candidates.content.parts.text 에 담은 정상 응답 바디(번역 등 평문 응답용). */
+    private fun textBody(text: String): String =
+        objectMapper.writeValueAsString(
+            mapOf("candidates" to listOf(mapOf("content" to mapOf("parts" to listOf(mapOf("text" to text)))))),
+        )
 
     /** MockRestServiceServer 를 바인딩한 GeminiClient 생성. */
     private fun boundClient(props: GeminiProperties): Pair<GeminiClient, MockRestServiceServer> {
@@ -104,6 +111,32 @@ class GeminiClientTest {
         assertFailsWith<HttpClientErrorException> {
             client.summarizeMeeting(attendees, messages)
         }
+        server.verify()
+    }
+
+    @Test
+    fun `translate - 대상 언어로 번역된 텍스트 반환`() {
+        val props = GeminiProperties(apiKey = "test-key", model = "gemini-2.5-flash-lite", retryBackoffMs = 0)
+        val (client, server) = boundClient(props)
+        server.expect(ExpectedCount.once(), requestTo(urlFor("gemini-2.5-flash-lite")))
+            .andRespond(withSuccess(textBody("Hello"), MediaType.APPLICATION_JSON))
+
+        val result = client.translate("안녕하세요", Language.EN)
+
+        assertEquals("Hello", result)
+        server.verify()
+    }
+
+    @Test
+    fun `translate - 503 후 재시도로 성공`() {
+        val props = GeminiProperties(apiKey = "test-key", model = "gemini-2.5-flash-lite", maxAttempts = 3, retryBackoffMs = 0)
+        val (client, server) = boundClient(props)
+        server.expect(ExpectedCount.once(), requestTo(urlFor("gemini-2.5-flash-lite")))
+            .andRespond(withStatus(HttpStatus.SERVICE_UNAVAILABLE))
+        server.expect(ExpectedCount.once(), requestTo(urlFor("gemini-2.5-flash-lite")))
+            .andRespond(withSuccess(textBody("Hello"), MediaType.APPLICATION_JSON))
+
+        assertEquals("Hello", client.translate("안녕하세요", Language.EN))
         server.verify()
     }
 }
