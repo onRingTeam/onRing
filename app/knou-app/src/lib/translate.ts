@@ -65,26 +65,37 @@ export async function translate(
 
 let prefetched = false;
 
+/** ko→target 더미 번역으로 해당 언어 모델을 확보. 성공 여부 반환(실패해도 throw 안 함). */
+async function downloadModel(target: Exclude<LangCode, 'ko'>): Promise<boolean> {
+  try {
+    // 이미 있으면 즉시 통과, 없으면 다운로드 유도.
+    await TranslateText.translate({
+      text: '.',
+      sourceLanguage: TranslateLanguage.KOREAN,
+      targetLanguage: LANG_TO_MLKIT[target],
+      downloadModelIfNeeded: true,
+    });
+    return true;
+  } catch (e) {
+    console.warn('[translate] 모델 프리페치 실패:', target, e);
+    return false;
+  }
+}
+
 /**
- * 기본 4개 언어(ko·en·ja·zh) 모델 프리페치 — 앱 시작 시 1회 (네트워크 종류 무관).
+ * 기본 4개 언어(ko·en·ja·zh) 모델 프리페치 — 앱 시작 시 (네트워크 종류 무관).
  * "기본 내장" UX: 회의 진입 전에 모델을 미리 받아둬 첫 번역 지연을 없앤다.
  * (ML Kit 은 모델의 APK 번들을 지원하지 않아 최초 1회 런타임 다운로드가 최선)
+ *
+ * en·ja·zh 를 **병렬**로 받는다. 순차로 받으면 ja·zh 가 en 뒤에 밀려 첫 번역이
+ * 오래 걸리거나 안 뜨는 문제가 있었다. 하나라도 실패하면 prefetched 를 세우지 않아
+ * 다음 호출(다음 앱 실행)에서 재시도한다.
  */
 export async function prefetchTranslationModels(): Promise<void> {
   if (prefetched || Platform.OS === 'web') return;
-  prefetched = true;
 
-  for (const target of ['en', 'ja', 'zh'] as const) {
-    try {
-      // ko→X 더미 번역으로 양쪽 모델 다운로드 유도 (이미 있으면 즉시 통과)
-      await TranslateText.translate({
-        text: '.',
-        sourceLanguage: TranslateLanguage.KOREAN,
-        targetLanguage: LANG_TO_MLKIT[target],
-        downloadModelIfNeeded: true,
-      });
-    } catch (e) {
-      console.warn('[translate] 모델 프리페치 실패:', target, e);
-    }
-  }
+  const results = await Promise.all(
+    (['en', 'ja', 'zh'] as const).map((target) => downloadModel(target)),
+  );
+  prefetched = results.every(Boolean);
 }
