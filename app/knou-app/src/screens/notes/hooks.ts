@@ -30,22 +30,38 @@ const SUMMARY_POLL_MAX = 20;
 
 /**
  * 상세회의 - AI 요약 쿼리.
- * @param waitForSummary 방금 종료한 회의처럼 요약 생성을 기다려야 하는 경우 true.
- *   summary 가 채워질 때까지(최대 약 60초) 폴링하고, 도착하거나 상한 도달 시 중단한다.
+ *
+ * 요약이 없으면(summary=null) 폴링한다. 백엔드는 상세 조회마다 요약이 없을 때 온디맨드로
+ * 재생성을 트리거([MeetingSummaryRegenerationListener])해 완료되면 DB 에 저장하므로,
+ * 방금 종료한 회의뿐 아니라 예전에 열어 요약이 비어 있던 회의도 다시 열면 폴링으로
+ * 재생성된 요약을 받아 표시한다. 최대 약 60초 폴링 후(채팅 0건 회의 등) 포기한다.
+ *
+ * @param waitForSummary (호환용) 방금 종료한 회의 진입 시 전달. 폴링 자체는 summary 유무로
+ *   판단하므로 값과 무관하게 동작하지만, 의미를 드러내기 위해 유지한다.
+ * @returns 쿼리 결과에 `isSummaryPending`(재생성을 기다리는 중 = '생성 중' 표시) 을 덧붙여 반환.
  */
-export function useMeetingDetail(meetingId: number, options?: { waitForSummary?: boolean }) {
-  const waitForSummary = options?.waitForSummary ?? false;
-  return useQuery({
-    queryKey: ['meeting-detail', meetingId],
+export function useMeetingDetail(meetingId: number, _options?: { waitForSummary?: boolean }) {
+  const qc = useQueryClient();
+  const queryKey = ['meeting-detail', meetingId] as const;
+  const query = useQuery({
+    queryKey,
     queryFn: () => fetchMeetingDetail(meetingId),
     enabled: Number.isFinite(meetingId),
-    refetchInterval: (query) => {
-      if (!waitForSummary) return false;
-      if (query.state.data?.summary != null) return false; // 요약 도착 → 중단
-      if (query.state.dataUpdateCount >= SUMMARY_POLL_MAX) return false; // 상한 → 포기
-      return SUMMARY_POLL_INTERVAL_MS;
+    refetchInterval: (q) => {
+      if (q.state.data?.summary != null) return false; // 요약 도착 → 중단
+      if (q.state.dataUpdateCount >= SUMMARY_POLL_MAX) return false; // 상한 → 포기
+      return SUMMARY_POLL_INTERVAL_MS; // 요약 없음 → 재생성 완료까지 폴링
     },
   });
+
+  // 폴링 횟수는 쿼리 상태(dataUpdateCount)에서 읽는다 — v5 useQuery 결과엔 노출되지 않음.
+  // 컴포넌트는 쿼리 갱신마다 리렌더되므로 렌더 시점의 최신 카운트를 읽는다.
+  const updateCount = qc.getQueryState(queryKey)?.dataUpdateCount ?? 0;
+  // 상세는 왔지만 요약이 아직 없고 폴링 상한에 닿지 않음 → 백엔드 재생성을 기다리는 중.
+  const isSummaryPending =
+    query.data != null && query.data.summary == null && updateCount < SUMMARY_POLL_MAX;
+
+  return { ...query, isSummaryPending };
 }
 
 /**

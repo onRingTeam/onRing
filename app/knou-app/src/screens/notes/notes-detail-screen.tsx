@@ -35,15 +35,21 @@ export function NotesDetailScreen({ id, waitForSummary = false }: NotesDetailScr
 
   const meetingId = Number(id);
   const [tab, setTab] = useState<DetailTab>('summary');
-  const { data: detail, isLoading, isError } = useMeetingDetail(meetingId, { waitForSummary });
+  const {
+    data: detail,
+    isLoading,
+    isError,
+    isSummaryPending,
+  } = useMeetingDetail(meetingId, { waitForSummary });
   // 전체 대화 탭 진입 시에만 조회 (lazy). 종료 회의 대화는 불변이라 한 번만 받아 캐시.
   const {
     data: transcript,
     isLoading: transcriptLoading,
     isError: transcriptError,
   } = useMeetingTranscript(meetingId, { enabled: !!detail && tab === 'transcript' });
-  // 요약이 아직 없고 폴링 중(방금 종료) → '생성 중' 표시 (상한 도달 시 refetchInterval 이 멈추면서 자연히 해제).
-  const summaryPending = waitForSummary && !detail?.summary;
+  // 요약이 아직 없고 폴링 중(방금 종료했거나, 예전 회의를 다시 열어 백엔드가 온디맨드 재생성 중)
+  // → '생성 중' 표시. 폴링 상한 도달 시 자연히 해제된다.
+  const summaryPending = isSummaryPending;
 
   // 3. 상단 통계 카드 데이터
   const stats = detail
