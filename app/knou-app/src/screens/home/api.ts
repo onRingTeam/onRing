@@ -33,7 +33,12 @@ export async function joinMeeting(meetingCode: string): Promise<MeetingRoomRespo
     },
     body: JSON.stringify({ meetingCode }),
   });
-  if (!res.ok) throw new Error(`회의 참여 실패 (${res.status})`);
+  if (!res.ok) {
+    // status 를 에러에 부착 → 호출부가 404(미존재)/409(종료)를 구분해 안내한다.
+    const err = new Error(`회의 참여 실패 (${res.status})`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 
