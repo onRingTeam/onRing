@@ -10,12 +10,10 @@ import { useSettingsStore } from '@/store';
 import type { MeetingMessageDto } from '@/types/meeting';
 import { SPEAKER_COLORS } from './summary-tab';
 
-/** 메시지별 번역 상태. done=번역 시도 완료(결과 null 이어도 true), shown=표시 토글. */
+/** 메시지별 번역 상태. text=마지막 번역 결과(실패 시 null). 버튼을 누를 때마다 새로 번역한다. */
 interface TransState {
   loading: boolean;
   text: string | null;
-  shown: boolean;
-  done: boolean;
 }
 
 export interface TranscriptTabProps {
@@ -47,17 +45,11 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
 
   const onTranslate = useCallback(
     async (m: MeetingMessageDto) => {
-      const cur = trans[m.messageId];
-      if (cur?.loading) return; // 진행 중 재요청 무시
-      if (cur?.done) {
-        // 이미 번역함 → 표시/숨김만 토글
-        setTrans((p) => ({ ...p, [m.messageId]: { ...cur, shown: !cur.shown } }));
-        return;
-      }
-      setTrans((p) => ({ ...p, [m.messageId]: { loading: true, text: null, shown: true, done: false } }));
-      // 설정 언어(myLanguage)로 온디바이스 ML Kit 번역. 실패·동일언어 시 null → 폴백 안내.
+      if (trans[m.messageId]?.loading) return; // 진행 중이면 무시
+      // 누를 때마다 설정 언어(myLanguage)로 새로 번역 — 이전에 실패했어도 그대로 재시도.
+      setTrans((p) => ({ ...p, [m.messageId]: { loading: true, text: null } }));
       const result = await translate(m.original, targetLang);
-      setTrans((p) => ({ ...p, [m.messageId]: { loading: false, text: result, shown: true, done: true } }));
+      setTrans((p) => ({ ...p, [m.messageId]: { loading: false, text: result } }));
     },
     [trans, targetLang],
   );
@@ -122,13 +114,13 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
               const t = trans[m.messageId];
               return (
                 <>
-                  {t?.shown && !t.loading && (
+                  {t && !t.loading && (
                     <View style={[styles.translationBox, { backgroundColor: colors.backgroundSelected }]}>
                       <ThemedText
                         type="small"
                         style={{ color: t.text ? colors.accent : colors.textSecondary }}
                       >
-                        {t.text ?? '번역할 내용이 없어요.'}
+                        {t.text ?? '번역에 실패했어요. 다시 눌러 주세요.'}
                       </ThemedText>
                     </View>
                   )}
@@ -136,7 +128,7 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
                     style={styles.translateBtn}
                     activeOpacity={0.7}
                     accessibilityRole="button"
-                    accessibilityLabel={t?.done && t.shown ? '번역 숨기기' : '번역'}
+                    accessibilityLabel="번역"
                     disabled={t?.loading}
                     onPress={() => onTranslate(m)}
                   >
@@ -146,7 +138,7 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
                       <>
                         <Feather name="globe" size={13} color={colors.accent} />
                         <ThemedText type="small" style={[styles.translateText, { color: colors.accent }]}>
-                          {t?.done && t.shown ? '숨기기' : '번역'}
+                          번역
                         </ThemedText>
                       </>
                     )}
