@@ -1,11 +1,12 @@
 // 1. Import
 import { useCallback, useState } from 'react';
-import { ScrollView, View, TouchableOpacity, TextInput, Modal } from 'react-native';
+import { ScrollView, View, TouchableOpacity, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
+import { showAppAlert } from '@/components/ui/app-alert';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useUiStore, useAuthStore, useMeetingStore } from '@/store';
@@ -25,7 +26,6 @@ export function HomeScreen() {
   const [joinCode, setJoinCode] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
   const [greeting] = useState('안녕하세요,');
-  const [showActiveConfirm, setShowActiveConfirm] = useState(false);
 
   // 4. 전역 상태 & 비동기 서비스
   // - Zustand: 로그인 사용자, UI 모달 제어, 진행중 회의(단일 소스)
@@ -48,19 +48,24 @@ export function HomeScreen() {
   const handleStartMeeting = () => {
     // 진행 중인 회의가 있으면 새 회의 생성 불가 → 회의실 이동 confirm (화면정의서 2-b-i-1)
     if (activeMeeting) {
-      setShowActiveConfirm(true);
+      void showAppAlert({
+        title: '진행 중인 회의가 있어요',
+        message: '진행 중인 회의가 있으면 새 회의를 만들 수 없어요. 진행 중인 회의실로 이동할까요?',
+        cancelable: true,
+        buttons: [
+          { key: 'cancel', text: '취소', style: 'cancel' },
+          { key: 'go', text: '이동하기', style: 'primary' },
+        ],
+      }).then((key) => {
+        if (key !== 'go' || !activeMeeting) return;
+        router.push({
+          pathname: '/(tabs)/meeting',
+          params: { meetingId: String(activeMeeting.meetingId), code: activeMeeting.meetingCode },
+        });
+      });
       return;
     }
     setShowCreateSheet(true);
-  };
-
-  const goToActiveMeeting = () => {
-    setShowActiveConfirm(false);
-    if (!activeMeeting) return;
-    router.push({
-      pathname: '/(tabs)/meeting',
-      params: { meetingId: String(activeMeeting.meetingId), code: activeMeeting.meetingCode },
-    });
   };
 
   const handleJoinByCode = async () => {
@@ -280,44 +285,6 @@ export function HomeScreen() {
 
       {/* 새 회의 생성 바텀시트 (「회의 시작」 → showCreateSheet) */}
       <CreateMeetingSheet />
-
-      {/* 진행 중인 회의 confirm (화면정의서 2-b-i-1) */}
-      <Modal visible={showActiveConfirm} transparent animationType="fade" onRequestClose={() => setShowActiveConfirm(false)}>
-        <View style={styles.confirmBackdrop}>
-          <View style={[styles.confirmCard, { backgroundColor: colors.backgroundElement }]}>
-            <ThemedText type="smallBold" style={styles.confirmTitle}>
-              진행 중인 회의가 있어요
-            </ThemedText>
-            <ThemedText type="small" themeColor="textSecondary" style={styles.confirmBody}>
-              진행 중인 회의가 있으면 새 회의를 만들 수 없어요. 진행 중인 회의실로 이동할까요?
-            </ThemedText>
-            <View style={styles.confirmRow}>
-              <TouchableOpacity
-                style={[styles.confirmBtn, { backgroundColor: colors.backgroundSelected }]}
-                onPress={() => setShowActiveConfirm(false)}
-                activeOpacity={0.8}
-                accessibilityRole="button"
-                accessibilityLabel="취소"
-              >
-                <ThemedText type="small" themeColor="textSecondary" style={styles.confirmBtnText}>
-                  취소
-                </ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.confirmBtn, { backgroundColor: colors.primary }]}
-                onPress={goToActiveMeeting}
-                activeOpacity={0.8}
-                accessibilityRole="button"
-                accessibilityLabel="회의실로 이동"
-              >
-                <ThemedText type="small" style={[styles.confirmBtnText, { color: '#ffffff' }]}>
-                  이동하기
-                </ThemedText>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }

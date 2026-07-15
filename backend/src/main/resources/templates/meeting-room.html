@@ -250,9 +250,85 @@ const RETURN_URL = Q.get('returnUrl') || '';
 /* ── RN WebView 브리지 ────────────────────────────────────────────
    Android WebView 는 Web Speech API(SpeechRecognition·speechSynthesis)가 없거나 불안정하다.
    브리지가 있으면 STT 는 expo-speech-recognition, TTS 는 expo-speech 로 네이티브에 위임한다.
-   (일반 브라우저 단독 실행 시엔 Web Speech API 폴백) */
+   Alert 는 네이티브 AppAlert(앱 공통 카드 UI) 로 위임한다.
+   (일반 브라우저 단독 실행 시엔 Web Speech / window.alert·confirm 폴백) */
 const RN = window.ReactNativeWebView || null;
 const post = (msg) => { try { RN.postMessage(JSON.stringify(msg)); } catch (e) { /* ignore */ } };
+
+/* ── 공통 Alert 브리지 (네이티브 AppAlert) ───────────────────────
+   appAlert({ title, message, buttons, cancelable, icon, iconTone }) → Promise<buttonKey>
+   브라우저 단독 실행 시 window.alert / confirm 폴백. */
+window.__alertPending = window.__alertPending || {};
+window.__alertResult = function (requestId, key) {
+    const r = window.__alertPending[requestId];
+    if (!r) return;
+    delete window.__alertPending[requestId];
+    r(key);
+};
+function appAlert(opts) {
+    opts = opts || {};
+    const buttons = (opts.buttons && opts.buttons.length)
+        ? opts.buttons
+        : [{ key: 'ok', text: '확인', style: 'primary' }];
+    return new Promise(function (resolve) {
+        if (!RN) {
+            // 브라우저 폴백
+            const title = opts.title || '';
+            const message = opts.message || '';
+            const text = message ? (title + '\n' + message) : title;
+            if (buttons.length <= 1) {
+                window.alert(text);
+                resolve(buttons[0].key || 'ok');
+                return;
+            }
+            const ok = window.confirm(text);
+            if (!ok) {
+                const cancel = buttons.find(function (b) { return b.style === 'cancel'; });
+                resolve(cancel ? (cancel.key || 'cancel') : null);
+                return;
+            }
+            const action = buttons.find(function (b) {
+                return b.style === 'primary' || b.style === 'destructive' || b.style === 'default';
+            }) || buttons[buttons.length - 1];
+            resolve(action.key || action.text || 'ok');
+            return;
+        }
+        const requestId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        window.__alertPending[requestId] = resolve;
+        post({
+            type: 'alert',
+            requestId: requestId,
+            title: opts.title || '',
+            message: opts.message || '',
+            cancelable: opts.cancelable !== false,
+            icon: opts.icon || null,
+            iconTone: opts.iconTone || null,
+            buttons: buttons.map(function (b) {
+                return {
+                    key: b.key || b.text || 'ok',
+                    text: b.text || '확인',
+                    style: b.style || 'default',
+                };
+            }),
+        });
+    });
+}
+function appConfirm(title, message, opts) {
+    opts = opts || {};
+    return appAlert({
+        title: title,
+        message: message,
+        cancelable: true,
+        buttons: [
+            { key: 'cancel', text: opts.cancelText || '취소', style: 'cancel' },
+            {
+                key: 'confirm',
+                text: opts.confirmText || '확인',
+                style: opts.destructive ? 'destructive' : 'primary',
+            },
+        ],
+    }).then(function (key) { return key === 'confirm'; });
+}
 
 /* app 의 LangCode ↔ 백엔드 enum ↔ TTS locale ↔ 국기 (constants/languages.ts 와 동일) */
 const LANGS = [
@@ -289,7 +365,15 @@ function returnToApp(type, remote) {
 
 /* ── 회의 코드 복사 ───────────────────────────────────────────── */
 $('coderow').onclick = () => {
-    const done = () => alert('회의 코드가 복사되었습니다.\n' + CODE);
+    const done = () => {
+        void appAlert({
+            title: '복사됨',
+            message: '회의 코드가 복사되었습니다.\n' + CODE,
+            icon: 'copy-outline',
+            iconTone: 'primary',
+            buttons: [{ key: 'ok', text: '확인', style: 'primary' }],
+        });
+    };
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(CODE).then(done).catch(() => legacyCopy());
     } else legacyCopy();
@@ -809,7 +893,13 @@ async function startVoice() {
         console.warn('[voice] start 실패', e);
         mesh = null;
         // 음성통화만 실패 — 채팅/자막은 계속. 마이크 UI 는 STT 전용으로 유지.
-        alert('음성통화 마이크를 사용할 수 없어요.\n권한을 허용하거나 HTTPS 환경을 확인해 주세요.\n(채팅·자막은 계속 사용할 수 있어요)');
+        void appAlert({
+            title: '음성통화를 시작할 수 없어요',
+            message: '마이크 권한을 허용하거나 HTTPS 환경을 확인해 주세요. 채팅·자막은 계속 사용할 수 있어요.',
+            icon: 'mic-off-outline',
+            iconTone: 'error',
+            buttons: [{ key: 'ok', text: '확인', style: 'primary' }],
+        });
     }
 }
 
@@ -939,7 +1029,12 @@ if (IS_HOST) {
     // 개설자(attendance.iscreated='Y') → 회의 종료 버튼
     endBtn.style.display = '';
     endBtn.onclick = async () => {
-        if (!confirm('회의를 종료할까요?\n종료하면 회의 요약과 전체 대화를 확인할 수 있어요.')) return;
+        const ok = await appConfirm(
+            '회의를 종료할까요?',
+            '종료하면 회의 요약과 전체 대화를 확인할 수 있어요.',
+            { confirmText: '종료', cancelText: '취소', destructive: true },
+        );
+        if (!ok) return;
         if (closed) return;
         closed = true;
         endBtn.disabled = true;

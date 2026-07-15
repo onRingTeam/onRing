@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { AppStatusBar } from '@/components/layout/app-status-bar';
+import { AppAlertHost } from '@/components/ui/app-alert';
 import { useAuthStore } from '@/store';
 import { bootstrapAuth } from '@/lib/auth';
 import { prefetchTranslationModels } from '@/lib/translate';
@@ -64,6 +65,8 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
           <Stack.Screen name="login" options={{ headerShown: false }} />
         </Stack>
+        {/* 전역 공통 Alert — 네이티브·WebView 브리지 공용 (showAppAlert) */}
+        <AppAlertHost />
       </ThemeProvider>
     </QueryClientProvider>
   );

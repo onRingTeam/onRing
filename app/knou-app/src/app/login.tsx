@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Image, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AntDesign } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
+import { showAlert } from '@/components/ui/app-alert';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { loginWithGoogle } from '@/lib/auth';
@@ -28,7 +29,7 @@ export default function LoginScreen() {
       // 성공 시 스토어 변경 → 게이트가 자동 라우팅. 취소면 그냥 이 화면 유지.
     } catch (e) {
       console.warn('[login] 구글 로그인 실패', e);
-      Alert.alert('로그인 실패', '구글 로그인 중 문제가 발생했습니다. 다시 시도해 주세요.');
+      void showAlert('로그인 실패', '구글 로그인 중 문제가 발생했습니다. 다시 시도해 주세요.');
     } finally {
       setLoading(false);
     }

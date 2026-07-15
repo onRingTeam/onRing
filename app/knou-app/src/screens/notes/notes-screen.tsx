@@ -1,11 +1,12 @@
 // 1. Import
 import { useState } from 'react';
-import { Modal, ScrollView, View, TouchableOpacity, TextInput } from 'react-native';
+import { ScrollView, View, TouchableOpacity, TextInput } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather, Ionicons } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
+import { showAppAlert } from '@/components/ui/app-alert';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import type { MeetingListItem } from '@/types/meeting';
@@ -26,7 +27,6 @@ export function NotesScreen() {
   const [filter, setFilter] = useState<FilterTab>('all');
   const [deleteMode, setDeleteMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // 4. 서버 상태 — 회의록 목록 + 즐겨찾기 토글 + 선택 삭제
   const { data: meetings = [], isLoading } = useMeetings({
@@ -62,15 +62,29 @@ export function NotesScreen() {
     });
   };
 
-  // 선택한 회의록 삭제 — 내 참석 레코드 use_yn=N 처리 후 목록 갱신
-  const handleConfirmDelete = () => {
+  // 선택한 회의록 삭제 — 확인 다이얼로그 후 내 참석 레코드 use_yn=N 처리
+  const handleDeletePress = () => {
     if (selectedIds.size === 0 || deleteMutation.isPending) return;
-    deleteMutation.mutate([...selectedIds], {
-      onSuccess: () => {
-        setShowDeleteConfirm(false);
-        setDeleteMode(false);
-        setSelectedIds(new Set());
-      },
+    const count = selectedIds.size;
+    void showAppAlert({
+      title: `회의록 ${count}개를 삭제할까요?`,
+      message:
+        '내 목록에서만 숨겨지며 다른 참석자에게는 그대로 남아요. 삭제한 회의록은 최근 회의에서도 보이지 않습니다.',
+      icon: 'trash-outline',
+      iconTone: 'error',
+      cancelable: true,
+      buttons: [
+        { key: 'cancel', text: '취소', style: 'cancel' },
+        { key: 'delete', text: '삭제', style: 'destructive' },
+      ],
+    }).then((key) => {
+      if (key !== 'delete') return;
+      deleteMutation.mutate([...selectedIds], {
+        onSuccess: () => {
+          setDeleteMode(false);
+          setSelectedIds(new Set());
+        },
+      });
     });
   };
 
@@ -291,7 +305,7 @@ export function NotesScreen() {
               {selectedCount > 0 ? `${selectedCount}개 선택됨` : '삭제할 회의록을 선택하세요'}
             </ThemedText>
             <TouchableOpacity
-              onPress={() => setShowDeleteConfirm(true)}
+              onPress={handleDeletePress}
               activeOpacity={0.85}
               disabled={selectedCount === 0}
               style={[
@@ -318,53 +332,6 @@ export function NotesScreen() {
         </SafeAreaView>
       )}
 
-      {/* 삭제 확인 모달 */}
-      <Modal
-        visible={showDeleteConfirm}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowDeleteConfirm(false)}
-      >
-        <View style={styles.confirmBackdrop}>
-          <View style={[styles.confirmCard, { backgroundColor: colors.backgroundElement }]}>
-            <View style={[styles.confirmIcon, { backgroundColor: colors.backgroundSelected }]}>
-              <Ionicons name="trash-outline" size={22} color={colors.error} />
-            </View>
-            <ThemedText type="smallBold" style={styles.confirmTitle}>
-              회의록 {selectedCount}개를 삭제할까요?
-            </ThemedText>
-            <ThemedText type="small" themeColor="textSecondary" style={styles.confirmBody}>
-              내 목록에서만 숨겨지며 다른 참석자에게는 그대로 남아요. 삭제한 회의록은 최근 회의에서도 보이지 않습니다.
-            </ThemedText>
-            <View style={styles.confirmRow}>
-              <TouchableOpacity
-                style={[styles.confirmBtn, { backgroundColor: colors.backgroundSelected }]}
-                onPress={() => setShowDeleteConfirm(false)}
-                activeOpacity={0.8}
-                disabled={deleteMutation.isPending}
-                accessibilityRole="button"
-                accessibilityLabel="취소"
-              >
-                <ThemedText type="small" themeColor="textSecondary" style={styles.confirmBtnText}>
-                  취소
-                </ThemedText>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.confirmBtn, { backgroundColor: colors.error }]}
-                onPress={handleConfirmDelete}
-                activeOpacity={0.8}
-                disabled={deleteMutation.isPending}
-                accessibilityRole="button"
-                accessibilityLabel="삭제"
-              >
-                <ThemedText type="small" style={[styles.confirmBtnText, { color: '#ffffff' }]}>
-                  {deleteMutation.isPending ? '삭제 중…' : '삭제'}
-                </ThemedText>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }

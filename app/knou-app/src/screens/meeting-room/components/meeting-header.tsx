@@ -1,9 +1,10 @@
-import { Alert, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 
 import { ThemedText } from '@/components/themed-text';
+import { showAlert } from '@/components/ui/app-alert';
 import { Spacing } from '@/constants/theme';
 
 export interface MeetingHeaderProps {
@@ -24,7 +25,7 @@ export function MeetingHeader({ title, code, elapsed, participants, onEnd }: Mee
   const copyCode = async () => {
     if (!code) return;
     await Clipboard.setStringAsync(code);
-    Alert.alert('복사됨', `회의 코드가 복사되었습니다.\n${code}`);
+    void showAlert('복사됨', `회의 코드가 복사되었습니다.\n${code}`);
   };
 
   return (

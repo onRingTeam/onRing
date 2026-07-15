@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { ActivityIndicator, Alert, PermissionsAndroid, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, PermissionsAndroid, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import type { ShouldStartLoadRequest, WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
@@ -11,6 +11,11 @@ import { Feather } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import {
+  showAppAlert,
+  type AppAlertButtonStyle,
+  type AppAlertIconTone,
+} from '@/components/ui/app-alert';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuthStore, useMeetingStore } from '@/store';
@@ -33,7 +38,7 @@ import { useMeetingSession } from './hooks';
  *
  * 역할 분담:
  *   - 웹 페이지: STOMP 채팅/presence/종료 + **WebRTC Mesh 음성통화** (getUserMedia + /signal)
- *   - 네이티브 브리지: STT(expo-speech-recognition), TTS(expo-speech) — Android WebView 미지원 보완
+ *   - 네이티브 브리지: STT·TTS + **공통 AppAlert** (웹 `alert`/`confirm` 대신 앱 디자인 다이얼로그)
  *
  * ⚠️ react-native-webview 는 네이티브 모듈 — OTA(JS만 교체)로는 배포되지 않고 앱 재빌드가 필요하다.
  *   meeting-room.html 변경은 백엔드 배포만으로 반영된다.
@@ -96,10 +101,27 @@ export function MeetingWebScreen() {
     sttRef.current = null;
   };
 
-  // 웹 페이지의 STT/TTS 위임 요청 — Android WebView 에는 Web Speech API 가 없어서
-  // 마이크 인식은 expo-speech-recognition(LiveStt), 읽어주기는 expo-speech 로 네이티브에서 수행한다.
+  /** 웹 → 네이티브 alert 결과를 페이지 콜백으로 돌려준다. */
+  const replyAlert = (requestId: string, key: string | null) => {
+    webRef.current?.injectJavaScript(
+      `window.__alertResult && window.__alertResult(${JSON.stringify(requestId)}, ${JSON.stringify(key)}); true;`,
+    );
+  };
+
+  // 웹 페이지의 STT/TTS/Alert 위임 — Android WebView 는 Web Speech 미지원, 시스템 alert 디자인도 제각각.
   const onMessage = (e: WebViewMessageEvent) => {
-    let msg: { type?: string; text?: string; lang?: string };
+    let msg: {
+      type?: string;
+      text?: string;
+      lang?: string;
+      requestId?: string;
+      title?: string;
+      message?: string;
+      cancelable?: boolean;
+      icon?: string;
+      iconTone?: string;
+      buttons?: { key?: string; text?: string; style?: string }[];
+    };
     try {
       msg = JSON.parse(e.nativeEvent.data);
     } catch {
@@ -134,6 +156,24 @@ export function MeetingWebScreen() {
       case 'stt-stop':
         stopStt();
         break;
+      case 'alert': {
+        // 웹 페이지 공통 AppAlert 브리지 (title/message/buttons → 네이티브 카드 UI)
+        const requestId = msg.requestId ?? '';
+        if (!requestId) break;
+        void showAppAlert({
+          title: msg.title ?? '',
+          message: msg.message || undefined,
+          cancelable: msg.cancelable !== false,
+          icon: msg.icon as Parameters<typeof showAppAlert>[0]['icon'],
+          iconTone: (msg.iconTone as AppAlertIconTone) || undefined,
+          buttons: (msg.buttons ?? [{ key: 'ok', text: '확인', style: 'primary' }]).map((b) => ({
+            key: b.key ?? b.text ?? 'ok',
+            text: b.text ?? '확인',
+            style: (b.style as AppAlertButtonStyle) || 'default',
+          })),
+        }).then((key) => replyAlert(requestId, key));
+        break;
+      }
     }
   };
 
@@ -191,12 +231,12 @@ export function MeetingWebScreen() {
       }
     };
     if (remote) {
-      Alert.alert(
-        '회의가 종료되었어요',
-        '개설자가 회의를 종료했습니다. 회의 요약을 확인해 보세요.',
-        [{ text: '요약 보기', onPress: goSummary }],
-        { cancelable: false, onDismiss: goSummary },
-      );
+      void showAppAlert({
+        title: '회의가 종료되었어요',
+        message: '개설자가 회의를 종료했습니다. 회의 요약을 확인해 보세요.',
+        cancelable: false,
+        buttons: [{ key: 'ok', text: '요약 보기', style: 'primary' }],
+      }).then(() => goSummary());
     } else {
       goSummary();
     }
@@ -221,19 +261,21 @@ export function MeetingWebScreen() {
     router.replace('/(tabs)');
   };
 
-  // 나가기 요청 → 재참여 여부 확인. 취소하면 아무것도 하지 않는다 —
+  // 나가기 요청 → 나가기 / 안 나가기. 안 나가기면 아무것도 하지 않는다 —
   // 딥링크 내비게이션은 가로챘으므로 웹 페이지(회의)는 그대로 살아 있다.
   const promptLeave = () => {
-    Alert.alert(
-      '회의에서 나가기',
-      '나중에 이 회의에 다시 참여하실 건가요?',
-      [
-        { text: '취소', style: 'cancel' },
-        { text: '재참여 안 함', style: 'destructive', onPress: () => leaveAndGoHome(false) },
-        { text: '재참여할게요', onPress: () => leaveAndGoHome(true) },
+    void showAppAlert({
+      title: '회의에서 나가기',
+      message: '회의에서 나가시겠어요?',
+      cancelable: true,
+      buttons: [
+        { key: 'stay', text: '안 나가기', style: 'cancel' },
+        { key: 'leave', text: '나가기', style: 'destructive' },
       ],
-      { cancelable: true },
-    );
+    }).then((key) => {
+      // 나가기: 서버 참석 해제(use_yn=N) 후 홈으로 — 진행중 회의에서 제외
+      if (key === 'leave') leaveAndGoHome(false);
+    });
   };
 
   // 웹 페이지의 딥링크(knouapp://meeting-done?type=…) 이동을 가로채 종료/나가기 분기.
