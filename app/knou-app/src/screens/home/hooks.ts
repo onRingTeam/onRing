@@ -21,7 +21,10 @@ export function useRecentMeetings() {
 
 /**
  * 서버(GET /api/meetings/active) 기준 진행중 회의를 스토어에 동기화하는 콜백.
- * 홈 포커스 시 호출해 종료/생성 후 상태 정합을 맞춘다.
+ * 홈 포커스 시 호출해 종료/생성/나가기 후 상태 정합을 맞춘다.
+ *
+ * null 응답이면 반드시 clear — 나가기(use_yn=N) 직후 홈 진입 시 이전 방이
+ * 하단 「회의」 탭에 다시 묶이지 않도록 한다.
  */
 export function useHydrateActiveMeeting() {
   const setActiveMeeting = useMeetingStore((s) => s.setActiveMeeting);
@@ -29,7 +32,7 @@ export function useHydrateActiveMeeting() {
     // 부팅 직후 세션 복구(backendUserId) 전에 호출되면 X-User-Id 없이 나가 400 — 스킵
     if (useAuthStore.getState().backendUserId == null) return;
     fetchActiveMeeting()
-      .then(setActiveMeeting)
+      .then((room) => setActiveMeeting(room)) // room 이 null 이면 진행중 해제
       .catch((e) => console.warn('[home] 진행중 회의 동기화 실패', e));
   }, [setActiveMeeting]);
 }

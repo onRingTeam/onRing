@@ -159,6 +159,8 @@ export function AppAlertHost() {
   const stacked = buttons.length >= 3;
 
   const onButton = (b: AppAlertButton, index: number) => {
+    // 연타 시 같은 요청을 두 번 dismiss 하지 않도록 현재 요청 기준 가드
+    if (!current) return;
     const key = buttonKey(b, index);
     try {
       b.onPress?.();
@@ -222,6 +224,7 @@ export function AppAlertHost() {
           onPress={req?.cancelable === false ? undefined : onRequestClose}
           accessibilityLabel="닫기"
         />
+        {/* zIndex 로 배경 Touchable 위에 올려 카드/버튼 탭이 dismiss 에 먹히지 않게 함 */}
         <View
           style={[styles.card, { backgroundColor: colors.backgroundElement }]}
           accessibilityRole="alert"
@@ -249,7 +252,6 @@ export function AppAlertHost() {
           <View style={[styles.btnRow, stacked && styles.btnCol]}>
             {ordered.map((b, i) => {
               const style = b.style ?? (stacked || ordered.length === 1 ? 'primary' : 'cancel');
-              // 2버튼 정렬 후 원래 index 로 key 생성에 쓰지 않도록 ordered 기준 key
               const originalIndex = buttons.indexOf(b);
               return (
                 <TouchableOpacity

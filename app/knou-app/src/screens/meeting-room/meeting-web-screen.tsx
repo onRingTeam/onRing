@@ -242,27 +242,39 @@ export function MeetingWebScreen() {
     }
   };
 
-  // 참여자 나가기 — 회의는 계속되므로 홈으로.
-  //  willRejoin=true : 진행중 상태 유지 → 홈에서 "재입장" 가능. 서버 호출 없음.
-  //  willRejoin=false: 서버 나가기(use_yn=N)로 진행중 회의에서 제외 → 홈에서 새 회의 개설 가능.
-  const leaveAndGoHome = (willRejoin: boolean) => {
+  // 참여자 나가기 — 서버 참석 해제(use_yn=N) 완료 후 홈으로.
+  // ⚠️ leave 를 await 하지 않으면 홈 hydrate(GET /active) 가 이전 방을 다시 심어
+  //    하단 「회의」 탭이 옛 방으로 재입장시키는 버그가 난다.
+  const leaveAndGoHome = async () => {
     if (doneRef.current) return;
     doneRef.current = true;
     stopStt();
     stopSpeaking();
-    // 재입장(홈 「재입장」 버튼) 시 세션을 새로 시작할 수 있도록 초기화
+    // 탭 화면은 언마운트되지 않으므로 세션/진행중 상태를 먼저 비운다
     startedMeetingRef.current = null;
     clearMeeting();
-    if (!willRejoin) {
-      clearActiveMeeting();
-      if (meetingId !== null) leaveMeeting(meetingId).catch((e) => console.warn('[meeting] 나가기 실패', e));
-      qc.invalidateQueries({ queryKey: ['active-meeting'] });
+    clearActiveMeeting();
+
+    if (meetingId !== null) {
+      try {
+        await leaveMeeting(meetingId);
+      } catch (e) {
+        console.warn('[meeting] 나가기 실패 — 한 번 더 시도', e);
+        try {
+          await leaveMeeting(meetingId);
+        } catch (e2) {
+          console.warn('[meeting] 나가기 재시도 실패', e2);
+        }
+      }
     }
+
+    // 서버 반영 뒤 캐시/스토어를 다시 비워 hydrate 레이스를 막는다
+    clearActiveMeeting();
+    qc.invalidateQueries({ queryKey: ['active-meeting'] });
     router.replace('/(tabs)');
   };
 
-  // 나가기 요청 → 나가기 / 안 나가기. 안 나가기면 아무것도 하지 않는다 —
-  // 딥링크 내비게이션은 가로챘으므로 웹 페이지(회의)는 그대로 살아 있다.
+  // 나가기 확인 — 안 나가기면 no-op. 딥링크는 가로채므로 웹 회의 페이지는 그대로 유지.
   const promptLeave = () => {
     void showAppAlert({
       title: '회의에서 나가기',
@@ -273,8 +285,7 @@ export function MeetingWebScreen() {
         { key: 'leave', text: '나가기', style: 'destructive' },
       ],
     }).then((key) => {
-      // 나가기: 서버 참석 해제(use_yn=N) 후 홈으로 — 진행중 회의에서 제외
-      if (key === 'leave') leaveAndGoHome(false);
+      if (key === 'leave') void leaveAndGoHome();
     });
   };
 
@@ -294,12 +305,12 @@ export function MeetingWebScreen() {
     [meetingId],
   );
 
-  // 진행 중인 회의 없이 「회의」 탭 직접 진입 → 안내
-  if (meetingId === null && !inMeeting) return <NoMeetingState />;
+  // 나가기/종료 후 inMeeting=false 인데 URL params(meetingId) 가 남는 경우가 있다
+  // (탭 스크린 유지). 무한 로딩 대신 빈 안내로 보내고, 새 회의는 홈/회의 탭에서 연다.
+  if (!inMeeting || meetingId === null) return <NoMeetingState />;
 
-  // 세션 시작 전 첫 프레임 / 종료·나가기 후(탭 화면은 언마운트되지 않음) —
-  // WebView 를 내려 페이지의 STOMP 연결(presence)·STT 를 확실히 정리한다.
-  if (!uri || !inMeeting) {
+  // 세션 시작 직전(uri 조립 전) 짧은 로딩
+  if (!uri) {
     return (
       <ThemedView style={styles.container}>
         <View style={styles.loading}>
