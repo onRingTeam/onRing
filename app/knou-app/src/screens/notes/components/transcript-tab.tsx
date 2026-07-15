@@ -5,7 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { detectLang, translateDetailed } from '@/lib/translate';
+import { resolveSourceLang, translateDetailed } from '@/lib/translate';
 import { useSettingsStore } from '@/store';
 import { fromBackendLang, type MeetingMessageDto } from '@/types/meeting';
 import { translateText } from '../api';
@@ -69,11 +69,10 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
     async (m: MeetingMessageDto) => {
       if (trans[m.messageId]?.loading) return; // 진행 중이면 무시
 
-      // 원문 언어 결정: 서버가 알려준 lang 우선, 없으면 스크립트 기반 자동 감지로 폴백.
-      // 단, 저장된 lang 이 타깃과 같으면 실제 내용을 재감지해 오탐을 보정한다
-      // (예: 'ko' 로 태깅됐지만 실제론 영어인 "Hey" → en 으로 재감지되어 번역 시도).
-      let sourceLang = m.lang ? fromBackendLang(m.lang) : detectLang(m.original);
-      if (sourceLang === targetLang) sourceLang = detectLang(m.original);
+      // 원문 언어 결정: 내용(스크립트) 기반 감지 우선 — 저장된 lang 은 발화자의 설정 언어라
+      // 실제 내용과 다를 수 있다(설정 ko 로 영어를 입력하면 lang=ko). 태그를 신뢰해 엉뚱한
+      // 언어쌍으로 번역하면 결과가 깨지므로, 태그는 ja/zh 구분(한자만 쓴 문장)에만 쓴다.
+      const sourceLang = resolveSourceLang(m.original, m.lang ? fromBackendLang(m.lang) : undefined);
 
       // 재감지 후에도 원문이 이미 내 언어면 번역할 게 없다 → 원문 그대로 노출(실패 아님).
       if (sourceLang === targetLang) {

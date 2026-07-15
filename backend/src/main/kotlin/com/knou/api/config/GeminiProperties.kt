@@ -19,8 +19,9 @@ data class GeminiProperties(
     /**
      * 주 모델이 과부하(503)로 소진되면 1회 시도할 폴백 모델.
      * 빈 문자열이거나 주 모델과 같으면 폴백을 생략한다.
+     * 특정 버전 고정은 제공 종료 시 404 가 나므로(구 gemini-2.5-flash) 롤링 alias 기본값.
      */
-    var fallbackModel: String = "gemini-2.5-flash",
+    var fallbackModel: String = "gemini-flash-latest",
 
     /** 주 모델 최대 시도 횟수(최초 1 + 재시도). 재시도 가능한 오류(503/429/5xx·타임아웃)에만 적용. */
     var maxAttempts: Int = 3,
