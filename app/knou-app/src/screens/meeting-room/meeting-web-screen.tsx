@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, PermissionsAndroid, Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import type { ShouldStartLoadRequest, WebViewMessageEvent } from 'react-native-webview/lib/WebViewTypes';
@@ -29,15 +29,35 @@ import { useMeetingSession } from './hooks';
  *
  * ⚠️ 왜 네이티브가 아니라 웹인가:
  *   RN(Android) 의 WebSocket 이 STOMP NULL 프레임을 누락해 실시간 채팅 연결이 불안정하다.
- *   브라우저(stompjs + SockJS)에서는 정상 동작하므로, 채팅·자막·참여자 UI 만 웹으로 옮겼다.
- *   (웹 페이지 UI 는 네이티브 meeting-screen.tsx 와 동일한 디자인으로 맞춰져 있다.)
+ *   브라우저(stompjs + SockJS)에서는 정상 동작하므로 회의 UI 를 웹으로 옮겼다.
+ *
+ * 역할 분담:
+ *   - 웹 페이지: STOMP 채팅/presence/종료 + **WebRTC Mesh 음성통화** (getUserMedia + /signal)
+ *   - 네이티브 브리지: STT(expo-speech-recognition), TTS(expo-speech) — Android WebView 미지원 보완
  *
  * ⚠️ react-native-webview 는 네이티브 모듈 — OTA(JS만 교체)로는 배포되지 않고 앱 재빌드가 필요하다.
- *   (별도 창으로 띄우던 expo-web-browser 방식은 이 파일의 git 히스토리에 보존.)
+ *   meeting-room.html 변경은 백엔드 배포만으로 반영된다.
  *
  * 종료/나가기 복귀: 웹 페이지가 딥링크(knouapp://meeting-done?type=…)로 이동을 시도하면
  *   onShouldStartLoadWithRequest 가 이를 가로채(→ 페이지는 그대로) 요약 이동/나가기 처리.
  */
+
+/** Android: WebView getUserMedia 전에 RECORD_AUDIO 를 미리 확보 (WebChromeClient 권한 프롬프트 안정화). */
+async function ensureAndroidMicPermission(): Promise<void> {
+  if (Platform.OS !== 'android') return;
+  try {
+    const granted = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO);
+    if (granted) return;
+    await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.RECORD_AUDIO, {
+      title: '마이크 권한',
+      message: '회의 중 음성 대화를 위해 마이크 접근이 필요합니다.',
+      buttonPositive: '허용',
+      buttonNegative: '거부',
+    });
+  } catch (e) {
+    console.warn('[meeting-web] 마이크 권한 요청 실패', e);
+  }
+}
 
 /** 웹 페이지가 회의 종료·나가기 시 이동을 시도할 딥링크. (WebView 가 내비게이션을 가로챈다) */
 const RETURN_URL = makeRedirectUri({ scheme: 'knouapp', path: 'meeting-done' });
@@ -117,7 +137,7 @@ export function MeetingWebScreen() {
     }
   };
 
-  // 화면을 떠날 때(언마운트) STT/TTS 정리.
+  // 화면을 떠날 때(언마운트) STT/TTS 정리. (WebRTC 는 웹 pagehide 에서 stop)
   useEffect(() => () => {
     sttRef.current?.stop();
     sttRef.current = null;
@@ -129,6 +149,8 @@ export function MeetingWebScreen() {
       startedMeetingRef.current = meetingId;
       doneRef.current = false;
       startMeeting(code ?? '');
+      // WebRTC getUserMedia 가 바로 뜰 수 있도록 Android 마이크 권한 선요청
+      void ensureAndroidMicPermission();
     }
   }, [meetingId, code, startMeeting]);
 
@@ -259,6 +281,14 @@ export function MeetingWebScreen() {
         onShouldStartLoadWithRequest={onShouldStartLoad}
         setSupportMultipleWindows={false}
         domStorageEnabled
+        // WebRTC 음성: getUserMedia 마이크 + 원격 오디오 자동재생
+        // (Android 는 RECORD_AUDIO 매니페스트 + WebChromeClient onPermissionRequest 로 처리)
+        mediaPlaybackRequiresUserAction={false}
+        allowsInlineMediaPlayback
+        mediaCapturePermissionGrantType="grant"
+        javaScriptEnabled
+        // 일부 Android WebView 는 하드웨어 가속이 있어야 WebRTC 디코딩이 안정적
+        androidLayerType="hardware"
         startInLoadingState
         renderLoading={() => (
           <View style={[styles.loading, StyleSheet.absoluteFill]}>

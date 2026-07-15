@@ -424,10 +424,13 @@ readBtn.onclick = () => {
     if (lastCaption) speak(lastCaption.message, lastCaption.lang || toBackend(myLang));
 };
 
-/* ── 마이크 STT ───────────────────────────────────────────────────
-   앱(RN 브리지) → 네이티브 expo-speech-recognition 위임.
-   일반 브라우저 → Web Speech API. 둘 다 없으면 안내 후 비활성. */
-let micOn = false;
+/* ── 마이크 (WebRTC 송신 트랙 + STT) ─────────────────────────────
+   설계: 마이크 토글 = 음성통화 송신 on/off + 내 발화 자막(STT).
+   - WebRTC: 트랙 enable 토글 (연결 유지)
+   - STT: 앱(RN 브리지) → 네이티브 expo-speech-recognition
+         일반 브라우저 → Web Speech API
+   수신 WebRTC 오디오는 마이크와 무관하게 항상 재생. */
+let micOn = true; // 입장 시 송신 ON (네이티브 MeshVoiceCall 과 동일)
 let recognizer = null;
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 function setMicUi() {
@@ -436,17 +439,18 @@ function setMicUi() {
 }
 /* 네이티브 STT 확정 문장 수신 (RN 이 injectJavaScript 로 호출) */
 window.__sttFinal = (text) => {
-    // source: STT — 수신 측 TTS 재생 제외 (음성으로 이미 전달)
+    // source: STT — 수신 측 TTS 재생 제외 (WebRTC 음성으로 이미 들림)
     if (micOn && text) publish(text, 'STT');
 };
 /* 네이티브 마이크·음성인식 권한 거부 (RN 이 호출) */
 window.__sttDenied = () => {
-    micOn = false;
-    setMicUi();
-    alert('마이크(음성 인식) 권한이 필요해요.\n설정에서 권한을 허용해 주세요.');
+    // STT 만 실패 — WebRTC 송신은 유지(별도 getUserMedia). UI 는 끄지 않는다.
+    console.warn('[stt] 음성 인식 권한 거부');
 };
 function startStt() {
     if (RN) { post({ type: 'stt-start', lang: myLang }); return; }
+    if (!SR) return;
+    stopStt(); // 재시작 시 이전 세션 정리
     recognizer = new SR();
     recognizer.lang = ttsLocale(toBackend(myLang));
     recognizer.continuous = true;
@@ -455,7 +459,7 @@ function startStt() {
         for (let i = ev.resultIndex; i < ev.results.length; i++) {
             if (!ev.results[i].isFinal) continue;
             const text = ev.results[i][0].transcript.trim();
-            // source: STT — 수신 측 TTS 재생 제외 (음성으로 이미 전달)
+            // source: STT — 수신 측 TTS 재생 제외 (WebRTC 음성으로 이미 들림)
             if (text) publish(text, 'STT');
         }
     };
@@ -471,13 +475,21 @@ function stopStt() {
     try { r.onend = null; r.stop(); } catch (e) {}
 }
 micBtn.onclick = () => {
-    if (!RN && !SR) {
-        alert('이 기기에서는 음성 인식을 지원하지 않아요.\n아래 입력창으로 대화에 참여할 수 있어요.');
-        return;
-    }
     micOn = !micOn;
     setMicUi();
-    if (micOn) startStt(); else stopStt();
+    // WebRTC 송신 뮤트/언뮤트 (연결은 유지)
+    if (mesh) mesh.setMicEnabled(micOn);
+    // 자막용 STT 함께 토글
+    if (micOn) {
+        if (!RN && !SR) {
+            // STT 만 불가 — 음성통화(WebRTC) 는 계속 가능
+            console.warn('[stt] 이 기기는 음성 인식을 지원하지 않음');
+        } else {
+            startStt();
+        }
+    } else {
+        stopStt();
+    }
 };
 setMicUi();
 
@@ -502,6 +514,311 @@ function recoverMissed() {
         .catch(() => {});
 }
 
+/* ── WebRTC Mesh 음성통화 ────────────────────────────────────────
+   네이티브 mesh-voice-call.ts 와 동일 계약 (STOMP /signal).
+   서버는 단순 릴레이, offer/answer/ICE 는 브라우저가 처리.
+   개선: 시그널 직렬 처리 + ICE candidate 큐 (도착 순서 레이스 방지). */
+const ICE_SERVERS = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    {
+        urls: [
+            'turn:openrelay.metered.ca:80',
+            'turn:openrelay.metered.ca:443',
+            'turn:openrelay.metered.ca:443?transport=tcp',
+        ],
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+    },
+];
+/** 세션 고유 peerId (재연결해도 같은 탭이면 유지 — 새 입장으로 취급하려면 새로고침) */
+const PEER_ID = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+
+function MeshVoiceCall(peerId, sendSignal) {
+    this.peerId = peerId;
+    this.sendSignal = sendSignal;
+    this.localStream = null;
+    /** @type {Map<string, { pc: RTCPeerConnection, pending: any[], audio: HTMLAudioElement|null }>} */
+    this.peers = new Map();
+    /** start() 전 도착 시그널 버퍼 */
+    this.preStart = [];
+    this.started = false;
+    /** handleSignal 직렬화 (offer/answer/candidate 경합 방지) */
+    this.chain = Promise.resolve();
+}
+
+MeshVoiceCall.prototype.start = async function () {
+    if (this.started) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('getUserMedia 미지원 (HTTPS 필요)');
+    }
+    this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    this.setMicEnabled(micOn);
+    this.started = true;
+    // start 전에 쌓인 시그널 처리 후 join 공지
+    const buffered = this.preStart.splice(0);
+    this.sendSignal({ type: 'join', from: this.peerId, to: null });
+    for (const m of buffered) this.handleSignal(m);
+};
+
+MeshVoiceCall.prototype.handleSignal = function (msg) {
+    this.chain = this.chain
+        .then(() => this._handleOne(msg))
+        .catch((e) => console.warn('[voice] signal 처리 실패', msg && msg.type, e));
+};
+
+MeshVoiceCall.prototype._handleOne = async function (msg) {
+    if (!msg || msg.from === this.peerId) return;
+    if (msg.to && msg.to !== this.peerId) return;
+    if (!this.started) {
+        // leave 는 버퍼에 넣을 필요 없음
+        if (msg.type !== 'leave') this.preStart.push(msg);
+        return;
+    }
+
+    switch (msg.type) {
+        case 'join': {
+            // 브로드캐스트면 나를 알리려 회신 (1:1 회신은 루프 방지로 재회신 안 함)
+            if (!msg.to) this.sendSignal({ type: 'join', from: this.peerId, to: msg.from });
+            // peerId 큰 쪽만 offer (glare 방지)
+            if (this.peerId > msg.from) {
+                // 상대 재입장/재연결 시 죽은 피어는 걷어내고 다시 offer
+                const existing = this.peers.get(msg.from);
+                if (existing) {
+                    const st = existing.pc.connectionState;
+                    if (st === 'failed' || st === 'disconnected' || st === 'closed') {
+                        this._closePeer(msg.from);
+                    }
+                }
+                await this._makeOffer(msg.from);
+            }
+            break;
+        }
+        case 'offer': {
+            // glare: 양측이 동시에 offer 한 경우 — peerId 큰 쪽 offer 유지, 작은 쪽은 양보
+            const existing = this.peers.get(msg.from);
+            if (existing && existing.pc.signalingState === 'have-local-offer') {
+                if (this.peerId > msg.from) return;
+                this._closePeer(msg.from);
+            }
+            const peer = this._ensurePeer(msg.from);
+            const desc = JSON.parse(msg.payload);
+            await peer.pc.setRemoteDescription(desc);
+            await this._flushPending(msg.from);
+            const answer = await peer.pc.createAnswer();
+            await peer.pc.setLocalDescription(answer);
+            this.sendSignal({
+                type: 'answer',
+                from: this.peerId,
+                to: msg.from,
+                payload: JSON.stringify({ type: answer.type, sdp: answer.sdp }),
+            });
+            break;
+        }
+        case 'answer': {
+            const peer = this.peers.get(msg.from);
+            if (!peer || !msg.payload) return;
+            // offer 대기 중이 아니면(중복·늦은 answer) 무시 — iceRestart 재협상은 have-local-offer 로 다시 들어옴
+            if (peer.pc.signalingState !== 'have-local-offer') return;
+            await peer.pc.setRemoteDescription(JSON.parse(msg.payload));
+            await this._flushPending(msg.from);
+            break;
+        }
+        case 'candidate': {
+            if (!msg.payload) return;
+            const cand = JSON.parse(msg.payload);
+            const peer = this.peers.get(msg.from);
+            if (!peer) {
+                // offer 전 candidate — 피어 생성 후 flush 되도록 임시 보관
+                const early = this._ensurePeer(msg.from);
+                early.pending.push(cand);
+                return;
+            }
+            if (!peer.pc.remoteDescription) {
+                peer.pending.push(cand);
+            } else {
+                try { await peer.pc.addIceCandidate(cand); } catch (e) {
+                    console.warn('[voice] addIceCandidate', e);
+                }
+            }
+            break;
+        }
+        case 'leave': {
+            this._closePeer(msg.from);
+            break;
+        }
+    }
+};
+
+MeshVoiceCall.prototype._makeOffer = async function (remoteId) {
+    let peer = this.peers.get(remoteId);
+    if (peer) {
+        // 이미 연결됐거나 협상 중이면 스킵
+        if (peer.pc.signalingState !== 'stable') return;
+        if (peer.pc.connectionState === 'connected' || peer.pc.connectionState === 'connecting') return;
+        // stable 이지만 연결 안 됨(실패 직후 등) → 새로 협상
+        if (peer.pc.currentRemoteDescription || peer.pc.currentLocalDescription) {
+            this._closePeer(remoteId);
+            peer = null;
+        }
+    }
+    peer = this._ensurePeer(remoteId);
+    const offer = await peer.pc.createOffer();
+    await peer.pc.setLocalDescription(offer);
+    this.sendSignal({
+        type: 'offer',
+        from: this.peerId,
+        to: remoteId,
+        payload: JSON.stringify({ type: offer.type, sdp: offer.sdp }),
+    });
+};
+
+MeshVoiceCall.prototype._ensurePeer = function (remoteId) {
+    let peer = this.peers.get(remoteId);
+    if (peer) return peer;
+
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    peer = { pc: pc, pending: [], audio: null };
+    this.peers.set(remoteId, peer);
+
+    // 로컬 마이크 송신
+    if (this.localStream) {
+        this.localStream.getTracks().forEach((t) => pc.addTrack(t, this.localStream));
+    }
+
+    pc.onicecandidate = (ev) => {
+        if (!ev.candidate) return;
+        this.sendSignal({
+            type: 'candidate',
+            from: this.peerId,
+            to: remoteId,
+            payload: JSON.stringify({
+                candidate: ev.candidate.candidate,
+                sdpMid: ev.candidate.sdpMid,
+                sdpMLineIndex: ev.candidate.sdpMLineIndex,
+            }),
+        });
+    };
+
+    pc.onconnectionstatechange = () => {
+        console.log('[voice] peer', remoteId, pc.connectionState);
+        if (pc.connectionState === 'failed') {
+            // 간단 복구: ICE restart 시도
+            try {
+                if (this.peerId > remoteId) {
+                    pc.createOffer({ iceRestart: true }).then(async (offer) => {
+                        await pc.setLocalDescription(offer);
+                        this.sendSignal({
+                            type: 'offer',
+                            from: this.peerId,
+                            to: remoteId,
+                            payload: JSON.stringify({ type: offer.type, sdp: offer.sdp }),
+                        });
+                    }).catch((e) => console.warn('[voice] iceRestart 실패', e));
+                }
+            } catch (e) { /* ignore */ }
+        }
+    };
+
+    // 수신 오디오 자동 재생 (WebView: mediaPlaybackRequiresUserAction=false 필요)
+    pc.ontrack = (ev) => {
+        const stream = (ev.streams && ev.streams[0])
+            ? ev.streams[0]
+            : new MediaStream([ev.track]);
+        let audio = peer.audio;
+        if (!audio) {
+            audio = document.createElement('audio');
+            audio.autoplay = true;
+            audio.setAttribute('playsinline', 'true');
+            audio.style.display = 'none';
+            document.body.appendChild(audio);
+            peer.audio = audio;
+        }
+        audio.srcObject = stream;
+        const play = () => audio.play().catch((e) => console.warn('[voice] audio.play', e));
+        play();
+        // 일부 WebView 는 첫 제스처 전 autoplay 차단 → 다음 탭/클릭 시 재시도
+        const unlock = () => { play(); document.removeEventListener('click', unlock, true); };
+        document.addEventListener('click', unlock, true);
+    };
+
+    return peer;
+};
+
+MeshVoiceCall.prototype._flushPending = async function (remoteId) {
+    const peer = this.peers.get(remoteId);
+    if (!peer || !peer.pc.remoteDescription) return;
+    const list = peer.pending.splice(0);
+    for (const c of list) {
+        try { await peer.pc.addIceCandidate(c); } catch (e) {
+            console.warn('[voice] flush candidate', e);
+        }
+    }
+};
+
+MeshVoiceCall.prototype.setMicEnabled = function (enabled) {
+    if (!this.localStream) return;
+    this.localStream.getAudioTracks().forEach((t) => { t.enabled = !!enabled; });
+};
+
+MeshVoiceCall.prototype._closePeer = function (remoteId) {
+    const peer = this.peers.get(remoteId);
+    if (!peer) return;
+    try { peer.pc.close(); } catch (e) { /* ignore */ }
+    if (peer.audio) {
+        try { peer.audio.pause(); peer.audio.srcObject = null; peer.audio.remove(); } catch (e) { /* ignore */ }
+    }
+    this.peers.delete(remoteId);
+};
+
+MeshVoiceCall.prototype.stop = function () {
+    try { this.sendSignal({ type: 'leave', from: this.peerId, to: null }); } catch (e) { /* ignore */ }
+    this.peers.forEach((_, id) => this._closePeer(id));
+    this.peers.clear();
+    if (this.localStream) {
+        this.localStream.getTracks().forEach((t) => t.stop());
+        this.localStream = null;
+    }
+    this.started = false;
+    this.preStart = [];
+};
+
+/** @type {MeshVoiceCall|null} */
+let mesh = null;
+
+function sendSignal(msg) {
+    if (!connected || !client.connected) return;
+    client.publish({
+        destination: '/app/meetings/' + MEETING_ID + '/signal',
+        body: JSON.stringify(msg),
+    });
+}
+
+async function startVoice() {
+    // 재연결 시 이전 세션 정리 후 새로 join
+    if (mesh) {
+        try { mesh.stop(); } catch (e) { /* ignore */ }
+        mesh = null;
+    }
+    mesh = new MeshVoiceCall(PEER_ID, sendSignal);
+    try {
+        await mesh.start();
+        console.log('[voice] started peerId=' + PEER_ID);
+        // 입장 직후 마이크 ON 이면 STT 도 시작 (자막)
+        if (micOn) startStt();
+    } catch (e) {
+        console.warn('[voice] start 실패', e);
+        mesh = null;
+        // 음성통화만 실패 — 채팅/자막은 계속. 마이크 UI 는 STT 전용으로 유지.
+        alert('음성통화 마이크를 사용할 수 없어요.\n권한을 허용하거나 HTTPS 환경을 확인해 주세요.\n(채팅·자막은 계속 사용할 수 있어요)');
+    }
+}
+
+function stopVoice() {
+    if (!mesh) return;
+    try { mesh.stop(); } catch (e) { /* ignore */ }
+    mesh = null;
+}
+
 /* ── STOMP ────────────────────────────────────────────────────── */
 const base = '/topic/meetings/' + MEETING_ID;
 let connected = false;
@@ -523,6 +840,7 @@ client.onConnect = () => {
         lastSentAt = m.sentAt;
         addCaption(m);
         // 타이핑 채팅(CHAT)만, 남의 것만, 음성 토글 ON 일 때만 TTS 로 읽어준다
+        // (STT 발화는 WebRTC 로 이미 들렸으므로 TTS 제외)
         const mine = m.senderId === MY_ID && m.senderName === MY_NAME;
         if (!mine && m.source !== 'STT' && voiceOn) speak(m.message, m.lang);
     });
@@ -533,6 +851,21 @@ client.onConnect = () => {
         const ev = JSON.parse(f.body);
         if (ev.type === 'ENDED') endedRemote();
     });
+    // WebRTC Mesh 시그널링
+    client.subscribe(base + '/signal', (f) => {
+        try {
+            const m = JSON.parse(f.body);
+            if (mesh) mesh.handleSignal(m);
+            else {
+                // startVoice 레이스: mesh 생성 전이면 잠시 후 재시도 대신
+                // startVoice 가 mesh 를 만든 뒤 join 을 보내므로 보통 여기 안 옴.
+                // 재연결 직후 상대 leave/offer 가 오면 드롭될 수 있어 start 후 join 으로 재협상.
+                console.log('[voice] mesh 미기동 중 signal 무시', m.type);
+            }
+        } catch (e) {
+            console.warn('[voice] signal parse', e);
+        }
+    });
 
     // 입장(presence)
     client.publish({
@@ -541,10 +874,15 @@ client.onConnect = () => {
     });
 
     recoverMissed();
+
+    // 시그널 구독 후 음성통화 시작 (재연결 시에도 재join)
+    void startVoice();
 };
 client.onWebSocketClose = () => {
     connected = false;
     updateSendUi();
+    // 소켓이 끊기면 시그널링 불가 — 미디어 peer 는 잠시 유지 가능하지만
+    // 재연결 시 startVoice 가 정리 후 재join 하므로 여기서 즉시 stop 하지 않음.
 };
 client.onStompError = (f) => console.warn('[STOMP] ' + (f.headers && f.headers.message));
 client.activate();
@@ -584,9 +922,15 @@ inputEl.addEventListener('input', updateSendUi);
 
 /* ── 종료/나가기 ──────────────────────────────────────────────── */
 let closed = false;
+function cleanupMedia() {
+    try { stopStt(); } catch (e) { /* ignore */ }
+    try { stopSpeak(); } catch (e) { /* ignore */ }
+    try { stopVoice(); } catch (e) { /* ignore */ }
+}
 function endedRemote() {   // 개설자가 종료 → 참여자: 요약으로
     if (closed) return;
     closed = true;
+    cleanupMedia();
     try { client.deactivate(); } catch (e) { /* ignore */ }
     returnToApp('ended', true);
 }
@@ -599,6 +943,7 @@ if (IS_HOST) {
         if (closed) return;
         closed = true;
         endBtn.disabled = true;
+        cleanupMedia();
         // 딥링크로 페이지를 떠나기 전에 종료 요청을 확실히 보낸다(리다이렉트가 in-flight fetch 를 끊지 않도록 await).
         // 서버는 참여자 전원에게 ENDED 브로드캐스트한다. 실패해도 개설자는 요약으로 이동.
         try {
@@ -614,15 +959,19 @@ if (IS_HOST) {
     leaveBtn.style.display = '';
     leaveBtn.onclick = () => {
         if (closed) return;
+        // 나가기 확인 전에 leave 시그널은 pagehide/언마운트에서 처리.
+        // 사용자가 앱 Alert 에서 취소해도 페이지가 남으므로 여기서 stopVoice 하지 않음.
         returnToApp('left', false);
     };
 }
 
-/* RN 이 뒤로가기 등으로 정리 요청할 때 대비 */
+/* RN 이 뒤로가기·화면 언마운트 등으로 정리할 때 대비 */
 window.addEventListener('pagehide', () => {
-    try { if (micOn) stopStt(); } catch (e) {}
-    try { stopSpeak(); } catch (e) {}
-    try { client.deactivate(); } catch (e) {}
+    cleanupMedia();
+    try { client.deactivate(); } catch (e) { /* ignore */ }
+});
+window.addEventListener('beforeunload', () => {
+    cleanupMedia();
 });
 </script>
 </body>
