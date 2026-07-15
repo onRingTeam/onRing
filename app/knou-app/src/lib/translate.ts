@@ -24,6 +24,21 @@ export function detectLang(text: string): LangCode {
 }
 
 /**
+ * 원문 언어 결정 — 내용(문자 스크립트) 우선, 태그는 스크립트로 구분 불가한 경우만 보조.
+ *
+ * 메시지에 저장된 lang 태그는 발화자의 **설정 언어**라 실제 내용 언어와 다를 수 있다
+ * (설정 ko 상태에서 영어를 입력하면 lang=ko 로 태깅됨). 잘못된 태그를 신뢰해 번역하면
+ * ML Kit 이 엉뚱한 언어쌍으로 돌려 결과가 깨진다(예: 영어 문장을 ko→en 으로 번역하면
+ * OOV passthrough 로 대소문자가 뒤섞임). 한글·가나·라틴은 스크립트가 언어를 확정하므로
+ * 감지 결과를 쓰고, 한자만으로 쓰인 텍스트(ja/zh 구분 불가)만 태그로 보정한다.
+ */
+export function resolveSourceLang(text: string, taggedLang?: LangCode): LangCode {
+  const detected = detectLang(text);
+  if (detected === 'zh' && taggedLang === 'ja') return 'ja'; // 한자만 쓴 일본어 문장
+  return detected;
+}
+
+/**
  * 온디바이스 번역(모델 보유 시) 1회 타임아웃. 모델이 있으면 번역은 1초 안쪽이라
  * 이 값은 순수 안전장치 — 네이티브 Promise 가 영원히 resolve 안 되는 경우를 끊는다.
  */
@@ -133,6 +148,19 @@ async function translateOnDevice(
   return String(result);
 }
 
+/**
+ * ML Kit 이 번역하지 못하고 원문을 사실상 그대로 돌려준(passthrough) 결과인지 판정.
+ * 짧은 감탄사·구어(예: "되라", "얍")는 ML Kit 이 번역 없이 원문을 반환하는데, 이를
+ * 성공으로 노출하면 원문이 "번역 결과"로 보인다 → 실패로 처리해 서버 번역으로 폴백시킨다.
+ */
+function looksUntranslated(text: string, result: string, from: LangCode, to: LangCode): boolean {
+  if (result.trim() === text.trim()) return true;
+  // 결과가 여전히 원문 언어 스크립트면 미번역. 단 ja↔zh 는 한자만으로도 정상 번역이
+  // 가능해 스크립트로 판정할 수 없으므로 제외.
+  if ((from === 'ja' && to === 'zh') || (from === 'zh' && to === 'ja')) return false;
+  return detectLang(result) === from;
+}
+
 // TODO :: 외국어 번역 static 메소드
 /**import { translate } from '@/lib/translate';
  * 기본: 문장 + 번역할 언어 (원본 언어는 자동 감지)
@@ -185,7 +213,11 @@ export async function translateDetailed(
   // 1) 다운로드 없이 시도 — 모델이 있으면 여기서 끝(즉시), 없으면 즉시 실패로 넘어감.
   let lastError: string | null = null;
   try {
-    return { text: await translateOnDevice(text, from, targetLang, timeoutMs), error: null };
+    const result = await translateOnDevice(text, from, targetLang, timeoutMs);
+    // 모델은 있지만 번역이 안 된(passthrough) 경우 — 다운로드로 해결될 문제가 아니므로
+    // 바로 실패를 돌려 호출부가 서버 번역으로 폴백하게 한다.
+    if (looksUntranslated(text, result, from, targetLang)) return { text: null, error: 'untranslated' };
+    return { text: result, error: null };
   } catch (e) {
     lastError = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
   }
@@ -199,7 +231,9 @@ export async function translateDetailed(
   // 라이브 회의: 서버 폴백이 없으므로 다운로드 완료를 기다렸다가 번역.
   if (await download) {
     try {
-      return { text: await translateOnDevice(text, from, targetLang, timeoutMs), error: null };
+      const result = await translateOnDevice(text, from, targetLang, timeoutMs);
+      if (looksUntranslated(text, result, from, targetLang)) return { text: null, error: 'untranslated' };
+      return { text: result, error: null };
     } catch (e) {
       lastError = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
       console.warn(`[translate] 번역 실패 ${from}→${targetLang}:`, e);

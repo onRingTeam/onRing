@@ -10,7 +10,7 @@ import { MeetingSocket } from '@/lib/websocket';
 import { MeshVoiceCall } from '@/lib/webrtc/mesh-voice-call';
 import { LiveStt } from '@/lib/stt/live-stt';
 import { speakMessage, stopSpeaking } from '@/lib/tts';
-import { translate } from '@/lib/translate';
+import { resolveSourceLang, translate } from '@/lib/translate';
 import { fetchMeetingEnded, endMeeting as endMeetingApi, fetchMessages } from './api';
 
 /**
@@ -119,10 +119,12 @@ export function useMeetingConnection(
 
         // 타이핑 채팅(CHAT)만 TTS 로 읽어준다 — STT 발화는 WebRTC 음성으로 이미 들렸고, 본인 메시지 제외
         const shouldSpeak = msg.source !== 'STT' && msg.senderName !== senderName;
-        // 외국어 메시지는 온디바이스 번역 후 자막의 번역칸을 채우고, TTS 도 번역문을 내 언어로 읽는다
-        const sourceLang = msg.lang != null ? fromBackendLang(msg.lang) : null;
+        // 외국어 메시지는 온디바이스 번역 후 자막의 번역칸을 채우고, TTS 도 번역문을 내 언어로 읽는다.
+        // 원문 언어는 내용(스크립트) 기반으로 판별 — msg.lang 은 발화자의 설정 언어라 실제
+        // 내용과 다를 수 있어(설정과 다른 언어로 입력), 태그는 ja/zh 구분에만 보조로 쓴다.
+        const sourceLang = resolveSourceLang(msg.message, msg.lang != null ? fromBackendLang(msg.lang) : undefined);
 
-        if (sourceLang && sourceLang !== myLanguage) {
+        if (sourceLang !== myLanguage) {
           void translate(msg.message, myLanguage, sourceLang).then((translated) => {
             if (translated) {
               setCaptionTranslation(caption.id, translated);
