@@ -15,8 +15,8 @@ import { SPEAKER_COLORS } from './summary-tab';
 interface TransState {
   loading: boolean;
   text: string | null;
-  /** 번역이 오래 걸려(모델 다운로드 추정) '다운로드 중' 안내를 표시할지. */
-  downloading: boolean;
+  /** 번역이 오래 걸려(서버 대기 등) '번역 중' 안내를 표시할지. */
+  slow: boolean;
   /**
    * 원문이 이미 내 설정 언어라 번역할 필요가 없는 상태.
    * (text=null 이지만 '실패'가 아님 — 실패 문구 대신 원문을 그대로 노출한다.)
@@ -25,17 +25,18 @@ interface TransState {
 }
 
 /**
- * 이 시간(ms)을 넘겨도 번역이 안 끝나면 ML Kit 모델을 다운로드 중인 것으로 보고 안내를 띄운다.
- * 모델이 이미 있으면 온디바이스 번역은 1초 안쪽이라, 이 지연을 넘는 건 최초 다운로드(수십 초)뿐이다.
- * → 모델이 있는 언어(예: 영어)는 안내가 뜨지 않고, 정말 받는 중일 때만 뜬다.
+ * 이 시간(ms)을 넘겨도 번역이 안 끝나면(서버 번역 대기 등) '번역 중' 안내를 띄운다.
+ * 모델 보유 시 온디바이스는 1초 안쪽, 미보유 시엔 즉시 서버로 폴백하므로
+ * 이 지연을 넘기는 건 서버 응답이 느린 경우뿐이다.
  */
-const MODEL_DOWNLOAD_HINT_DELAY_MS = 2000;
+const SLOW_HINT_DELAY_MS = 2000;
 
 /**
- * 전사 탭 온디바이스 번역 시도 타임아웃(짧게). 모델이 있으면 1초 안쪽이라 이 안에 끝나고,
- * 모델이 없어(ja·zh 다운로드 stall) 이 시간을 넘기면 빠르게 포기하고 서버 번역으로 폴백한다.
+ * 전사 탭 온디바이스 번역 시도 타임아웃(짧게). 모델 미보유 시엔 translateDetailed 가
+ * 다운로드를 기다리지 않고 즉시 실패를 돌려주므로(waitForModel=false), 이 값은 모델
+ * 보유 상태에서 네이티브 호출이 멈추는 경우를 끊는 안전장치다.
  */
-const ON_DEVICE_TIMEOUT_MS = 5000;
+const ON_DEVICE_TIMEOUT_MS = 2500;
 
 export interface TranscriptTabProps {
   messages: MeetingMessageDto[];
@@ -78,7 +79,7 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
       if (sourceLang === targetLang) {
         setTrans((p) => ({
           ...p,
-          [m.messageId]: { loading: false, text: null, downloading: false, sameLang: true },
+          [m.messageId]: { loading: false, text: null, slow: false, sameLang: true },
         }));
         return;
       }
@@ -86,20 +87,24 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
       // 누를 때마다 설정 언어(myLanguage)로 새로 번역 — 이전에 실패했어도 그대로 재시도.
       setTrans((p) => ({
         ...p,
-        [m.messageId]: { loading: true, text: null, downloading: false, sameLang: false },
+        [m.messageId]: { loading: true, text: null, slow: false, sameLang: false },
       }));
-      // 번역이 오래 걸리면(=모델 다운로드/서버 대기) '다운로드 중' 안내를 켠다. 빠르면 타이머 취소.
+      // 번역이 오래 걸리면(서버 대기 등) '번역 중' 안내를 켠다. 빠르면 타이머 취소.
       const slowTimer = setTimeout(() => {
         setTrans((p) => {
           const cur = p[m.messageId];
           if (!cur?.loading) return p; // 이미 끝났으면 무시
-          return { ...p, [m.messageId]: { ...cur, downloading: true } };
+          return { ...p, [m.messageId]: { ...cur, slow: true } };
         });
-      }, MODEL_DOWNLOAD_HINT_DELAY_MS);
+      }, SLOW_HINT_DELAY_MS);
 
-      // 1) 온디바이스 먼저(짧은 타임아웃) — 모델 보유 시(en·ko) 즉시·무과금·오프라인.
-      let result = (await translateDetailed(m.original, targetLang, sourceLang, ON_DEVICE_TIMEOUT_MS)).text;
-      // 2) 실패(모델 미보유/다운로드 stall 등) 시 서버 번역(Gemini)으로 폴백 — ja·zh 포함 안정적.
+      // 1) 온디바이스 먼저 — 모델 보유 시 즉시·무과금·오프라인. 미보유 시 다운로드를 기다리지
+      //    않고 즉시 실패를 돌려준다(waitForModel=false; 다운로드는 백그라운드로 진행되어
+      //    다음 번역부턴 온디바이스로 처리).
+      let result = (
+        await translateDetailed(m.original, targetLang, sourceLang, ON_DEVICE_TIMEOUT_MS, false)
+      ).text;
+      // 2) 모델 미보유 시 서버 번역(Gemini)으로 즉시 폴백 — ja·zh 포함 안정적.
       if (result == null) {
         try {
           result = await translateText(m.original, targetLang);
@@ -110,7 +115,7 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
       clearTimeout(slowTimer);
       setTrans((p) => ({
         ...p,
-        [m.messageId]: { loading: false, text: result, downloading: false, sameLang: false },
+        [m.messageId]: { loading: false, text: result, slow: false, sameLang: false },
       }));
     },
     [trans, targetLang],
@@ -199,9 +204,9 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
                     {t?.loading ? (
                       <>
                         <ActivityIndicator size="small" color={colors.accent} />
-                        {t.downloading && (
-                          <ThemedText type="small" themeColor="textSecondary" style={styles.downloadingText}>
-                            번역 모델 다운로드 중…
+                        {t.slow && (
+                          <ThemedText type="small" themeColor="textSecondary" style={styles.slowText}>
+                            번역 중…
                           </ThemedText>
                         )}
                       </>
@@ -280,7 +285,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  downloadingText: {
+  slowText: {
     fontSize: 12,
   },
 });
