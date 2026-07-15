@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
@@ -7,6 +7,7 @@ import { Feather } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { showAppAlert, showConfirm } from '@/components/ui/app-alert';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useAuthStore, useMeetingStore } from '@/store';
@@ -81,12 +82,12 @@ export function MeetingScreen() {
     // 상대방(개설자)이 종료한 경우엔 참여자에게 종료 사실을 알리고, 확인 시 요약으로 이동.
     // 내가 직접 누른 종료는 알림 없이 바로 이동.
     if (remote) {
-      Alert.alert(
-        '회의가 종료되었어요',
-        '개설자가 회의를 종료했습니다. 회의 요약을 확인해 보세요.',
-        [{ text: '요약 보기', onPress: goSummary }],
-        { cancelable: false, onDismiss: goSummary },
-      );
+      void showAppAlert({
+        title: '회의가 종료되었어요',
+        message: '개설자가 회의를 종료했습니다. 회의 요약을 확인해 보세요.',
+        cancelable: false,
+        buttons: [{ key: 'ok', text: '요약 보기', style: 'primary' }],
+      }).then(() => goSummary());
     } else {
       goSummary();
     }
@@ -118,25 +119,19 @@ export function MeetingScreen() {
     //  - 스토어 정리(finishLocally) + 서버 종료 API 호출을 함께 수행한다.
     //  - 서버는 참여자들에게 ENDED 를 브로드캐스트하고(→ 참여자는 finishLocally(true) 로 알럿+이동),
     //    회의 요약·전체 대화를 저장한다.
-    Alert.alert(
-      '회의를 종료할까요?',
-      '종료하면 회의 요약과 전체 대화를 확인할 수 있어요.',
-      [
-        { text: '취소', style: 'cancel' },
-        {
-          text: '종료',
-          style: 'destructive',
-          onPress: () => {
-            finishLocally(); // 스토어 정리 + 상세로 즉시 이동 (endedRef 선점으로 되돌아오는 ENDED 무시)
-            if (meetingId !== null) {
-              endMutation.mutate(meetingId, {
-                onError: (e) => console.warn('[meeting] 종료 실패(개설자 아님이거나 이미 종료)', e),
-              });
-            }
-          },
-        },
-      ],
-    );
+    void showConfirm('회의를 종료할까요?', '종료하면 회의 요약과 전체 대화를 확인할 수 있어요.', {
+      confirmText: '종료',
+      cancelText: '취소',
+      destructive: true,
+    }).then((ok) => {
+      if (!ok) return;
+      finishLocally(); // 스토어 정리 + 상세로 즉시 이동 (endedRef 선점으로 되돌아오는 ENDED 무시)
+      if (meetingId !== null) {
+        endMutation.mutate(meetingId, {
+          onError: (e) => console.warn('[meeting] 종료 실패(개설자 아님이거나 이미 종료)', e),
+        });
+      }
+    });
   };
 
   // presence가 오기 전에도 본인은 항상 보이도록 (서버 목록에 내 이름 있으면 중복 제거)
