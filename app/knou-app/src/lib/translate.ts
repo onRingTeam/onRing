@@ -81,11 +81,17 @@ export async function translate(
   return (await translateDetailed(text, targetLang, sourceLang)).text;
 }
 
-/** translate() 의 상세판 — 실패 시 마지막 에러 메시지를 함께 돌려준다(진단/표시용). */
+/**
+ * translate() 의 상세판 — 실패 시 마지막 에러 메시지를 함께 돌려준다(폴백 판단/로깅용).
+ *
+ * @param timeoutMs 1회 시도 타임아웃. 전사 탭은 짧게 줘(모델 보유 시 즉시, 미보유 시 빠르게
+ *   실패시켜 서버 번역으로 폴백) UX 를 살린다. 생략 시 라이브 회의용 기본값(60초).
+ */
 export async function translateDetailed(
   text: string,
   targetLang: LangCode,
   sourceLang?: LangCode,
+  timeoutMs: number = TRANSLATE_TIMEOUT_MS,
 ): Promise<{ text: string | null; error: string | null }> {
   const from = sourceLang ?? detectLang(text);
   if (from === targetLang || Platform.OS === 'web') return { text: null, error: null };
@@ -101,7 +107,7 @@ export async function translateDetailed(
           targetLanguage: LANG_TO_MLKIT[targetLang],
           downloadModelIfNeeded: true,
         }),
-        TRANSLATE_TIMEOUT_MS,
+        timeoutMs,
       );
       return { text: String(result), error: null };
     } catch (e) {

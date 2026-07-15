@@ -8,6 +8,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { detectLang, translateDetailed } from '@/lib/translate';
 import { useSettingsStore } from '@/store';
 import { fromBackendLang, type MeetingMessageDto } from '@/types/meeting';
+import { translateText } from '../api';
 import { SPEAKER_COLORS } from './summary-tab';
 
 /** 메시지별 번역 상태. text=마지막 번역 결과(실패 시 null). 버튼을 누를 때마다 새로 번역한다. */
@@ -21,8 +22,6 @@ interface TransState {
    * (text=null 이지만 '실패'가 아님 — 실패 문구 대신 원문을 그대로 노출한다.)
    */
   sameLang: boolean;
-  /** 실패 시 ML Kit 에러 메시지(진단용 임시 표시). */
-  error: string | null;
 }
 
 /**
@@ -31,6 +30,12 @@ interface TransState {
  * → 모델이 있는 언어(예: 영어)는 안내가 뜨지 않고, 정말 받는 중일 때만 뜬다.
  */
 const MODEL_DOWNLOAD_HINT_DELAY_MS = 2000;
+
+/**
+ * 전사 탭 온디바이스 번역 시도 타임아웃(짧게). 모델이 있으면 1초 안쪽이라 이 안에 끝나고,
+ * 모델이 없어(ja·zh 다운로드 stall) 이 시간을 넘기면 빠르게 포기하고 서버 번역으로 폴백한다.
+ */
+const ON_DEVICE_TIMEOUT_MS = 5000;
 
 export interface TranscriptTabProps {
   messages: MeetingMessageDto[];
@@ -73,7 +78,7 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
       if (sourceLang === targetLang) {
         setTrans((p) => ({
           ...p,
-          [m.messageId]: { loading: false, text: null, downloading: false, sameLang: true, error: null },
+          [m.messageId]: { loading: false, text: null, downloading: false, sameLang: true },
         }));
         return;
       }
@@ -81,9 +86,9 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
       // 누를 때마다 설정 언어(myLanguage)로 새로 번역 — 이전에 실패했어도 그대로 재시도.
       setTrans((p) => ({
         ...p,
-        [m.messageId]: { loading: true, text: null, downloading: false, sameLang: false, error: null },
+        [m.messageId]: { loading: true, text: null, downloading: false, sameLang: false },
       }));
-      // 번역이 오래 걸리면(=모델 최초 다운로드) '다운로드 중' 안내를 켠다. 빠르면(모델 보유) 타이머 취소.
+      // 번역이 오래 걸리면(=모델 다운로드/서버 대기) '다운로드 중' 안내를 켠다. 빠르면 타이머 취소.
       const slowTimer = setTimeout(() => {
         setTrans((p) => {
           const cur = p[m.messageId];
@@ -91,11 +96,21 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
           return { ...p, [m.messageId]: { ...cur, downloading: true } };
         });
       }, MODEL_DOWNLOAD_HINT_DELAY_MS);
-      const { text: result, error } = await translateDetailed(m.original, targetLang, sourceLang);
+
+      // 1) 온디바이스 먼저(짧은 타임아웃) — 모델 보유 시(en·ko) 즉시·무과금·오프라인.
+      let result = (await translateDetailed(m.original, targetLang, sourceLang, ON_DEVICE_TIMEOUT_MS)).text;
+      // 2) 실패(모델 미보유/다운로드 stall 등) 시 서버 번역(Gemini)으로 폴백 — ja·zh 포함 안정적.
+      if (result == null) {
+        try {
+          result = await translateText(m.original, targetLang);
+        } catch (e) {
+          console.warn('[translate] 서버 번역 폴백 실패:', e);
+        }
+      }
       clearTimeout(slowTimer);
       setTrans((p) => ({
         ...p,
-        [m.messageId]: { loading: false, text: result, downloading: false, sameLang: false, error },
+        [m.messageId]: { loading: false, text: result, downloading: false, sameLang: false },
       }));
     },
     [trans, targetLang],
@@ -171,12 +186,6 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
                           ? m.original
                           : (t.text ?? '번역에 실패했어요. 다시 눌러 주세요.')}
                       </ThemedText>
-                      {/* 진단용 임시 표시 — 실패 시 실제 ML Kit 에러 노출 (원인 확인 후 제거) */}
-                      {!t.text && !t.sameLang && t.error && (
-                        <ThemedText type="small" themeColor="textSecondary" style={styles.diagError}>
-                          {t.error}
-                        </ThemedText>
-                      )}
                     </View>
                   )}
                   <TouchableOpacity
@@ -273,10 +282,5 @@ const styles = StyleSheet.create({
   },
   downloadingText: {
     fontSize: 12,
-  },
-  diagError: {
-    fontSize: 11,
-    marginTop: Spacing.one,
-    opacity: 0.8,
   },
 });

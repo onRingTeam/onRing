@@ -1,4 +1,5 @@
-import type { MeetingDetail, MeetingListItem, MeetingMessageDto } from '@/types/meeting';
+import type { LangCode, MeetingDetail, MeetingListItem, MeetingMessageDto } from '@/types/meeting';
+import { toBackendLang } from '@/types/meeting';
 import { API_BASE } from '@/lib/config';
 import { authHeaders } from '@/lib/api-headers';
 
@@ -56,6 +57,22 @@ export async function fetchMeetingTranscript(meetingId: number): Promise<Meeting
   });
   if (!res.ok) throw new Error(`전체 대화 조회 실패 (${res.status})`);
   return res.json();
+}
+
+/**
+ * 단일 텍스트 서버 번역 (Gemini). 종료 회의 상세 '전체 대화' 탭의 메시지 개별 번역에 사용.
+ * 온디바이스 ML Kit 모델이 없거나(다운로드 stall) 실패할 때의 신뢰 가능한 폴백.
+ * POST /api/translations  (백엔드 TranslationController)
+ */
+export async function translateText(text: string, targetLang: LangCode): Promise<string> {
+  const res = await fetch(`${API_BASE}/api/translations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ text, targetLang: toBackendLang(targetLang) }),
+  });
+  if (!res.ok) throw new Error(`번역 실패 (${res.status})`);
+  const data = (await res.json()) as { translatedText: string };
+  return data.translatedText;
 }
 
 /**
