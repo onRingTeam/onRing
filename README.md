@@ -32,7 +32,7 @@
 | 이름 | GitHub | 주요 담당 |
 |------|--------|-----------|
 | 신민혁 | [@minhyeokshin](https://github.com/minhyeokshin) | 실시간 회의(STOMP/WebRTC 시그널링), 온디바이스 STT, 백엔드 인프라, CI/CD |
-| 고윤아 | [@kya9505](https://github.com/kya9505) |AI 회의 요약·번역, supabase 활용 소셜 로그인 앱 , DB 구조 설계, 화면(홈·회의록·설정), UI/UX 컴포넌트|
+| 고윤아 | [@kya9505](https://github.com/kya9505) |AI 회의 요약·번역, supabase 활용 소셜 로그인 앱 , DB 구조 설계, 화면(홈·회의록·설정), UI/UX 기획|
 
 ## 🛠️ 기술 스택
 
