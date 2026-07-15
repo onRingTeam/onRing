@@ -24,18 +24,19 @@ export function detectLang(text: string): LangCode {
 }
 
 /**
- * 번역/모델 다운로드가 이 시간(ms)을 넘기면 실패로 간주하고 중단한다.
- * ML Kit 모델 다운로드가 멈추면(stall) 네이티브 Promise 가 영원히 resolve 되지 않아
- * 호출부가 무한 로딩에 갇히는 문제를 막기 위한 안전장치. 모델 최초 다운로드(수십 초)는
- * 통과시키되, 그보다 오래 걸리면 끊고 재시도(재번역)로 회복할 수 있게 한다.
+ * 온디바이스 번역(모델 보유 시) 1회 타임아웃. 모델이 있으면 번역은 1초 안쪽이라
+ * 이 값은 순수 안전장치 — 네이티브 Promise 가 영원히 resolve 안 되는 경우를 끊는다.
  */
-const TRANSLATE_TIMEOUT_MS = 60_000;
+const TRANSLATE_TIMEOUT_MS = 30_000;
 
 /**
- * 모델 최초 다운로드(프리페치)용 타임아웃 — 언어당 ~30MB라 대화형보다 넉넉히 잡는다.
- * 느린 네트워크에서 정상 다운로드가 60초를 넘겨 실패로 처리되는 걸 막기 위함.
+ * 모델 다운로드(언어당 ~30MB) 1회 타임아웃. 이 시간을 넘기면 stall 로 간주하고 끊어
+ * 다음 요청에서 재시도할 수 있게 한다(멈춘 다운로드에 영원히 매달리지 않기).
  */
-const MODEL_DOWNLOAD_TIMEOUT_MS = 120_000;
+const MODEL_DOWNLOAD_TIMEOUT_MS = 60_000;
+
+/** 모델 다운로드 transient 실패(특히 ja·zh) 시 재시도 전 대기. */
+const DOWNLOAD_RETRY_BACKOFF_MS = 750;
 
 /** p 가 ms 안에 끝나지 않으면 reject. 성공 시 결과 그대로 통과. */
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -54,15 +55,92 @@ function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   });
 }
 
+/**
+ * 모델 보유가 확인된 언어. `downloadModelIfNeeded: false` 번역이 성공하면 해당 언어쌍의
+ * 두 모델이 모두 기기에 있다는 뜻이므로 여기 기록한다(이후 중복 다운로드 요청 생략).
+ */
+const modelReady = new Set<LangCode>();
+
+/**
+ * 모델 다운로드 직렬화 큐. ML Kit 은 모델을 **동시에** 여러 개 다운로드하면 stall 되어
+ * (다운로드가 영영 안 끝나고 이후 시도까지 오염) 모델이 사실상 안 받아지는 문제가 있다.
+ * 프리페치든 온디맨드(번역 버튼)든 모든 다운로드를 이 체인 하나로 줄 세워 stall 을 원천 차단한다.
+ */
+let downloadQueue: Promise<unknown> = Promise.resolve();
+
+/** 언어쌍별 진행 중 다운로드 — 같은 쌍의 중복 요청은 기존 Promise 를 공유한다. */
+const downloadInflight = new Map<string, Promise<boolean>>();
+
+/**
+ * from·to 언어 모델을 확보한다(없으면 다운로드). 전역 큐로 직렬화되며, 성공 여부를 반환하고
+ * 절대 throw 하지 않는다. 실패한 쌍은 inflight 에서 제거되어 다음 요청 때 자연 재시도된다.
+ */
+function ensureModels(from: LangCode, to: LangCode): Promise<boolean> {
+  if (modelReady.has(from) && modelReady.has(to)) return Promise.resolve(true);
+  const key = `${from}->${to}`;
+  const existing = downloadInflight.get(key);
+  if (existing) return existing;
+
+  const job = downloadQueue.then(async () => {
+    if (modelReady.has(from) && modelReady.has(to)) return true;
+    // 최대 2회 시도 — 최초 다운로드가 transient 하게 실패하는 경우 짧은 백오프 후 1회 재시도.
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await withTimeout(
+          TranslateText.translate({
+            text: '.',
+            sourceLanguage: LANG_TO_MLKIT[from],
+            targetLanguage: LANG_TO_MLKIT[to],
+            downloadModelIfNeeded: true,
+          }),
+          MODEL_DOWNLOAD_TIMEOUT_MS,
+        );
+        modelReady.add(from);
+        modelReady.add(to);
+        return true;
+      } catch (e) {
+        console.warn(`[translate] 모델 다운로드 실패 (${attempt}/2) ${key}:`, e);
+        if (attempt < 2) await new Promise((r) => setTimeout(r, DOWNLOAD_RETRY_BACKOFF_MS));
+      }
+    }
+    return false;
+  });
+  downloadQueue = job; // job 은 내부에서 catch 하므로 reject 하지 않는다
+  downloadInflight.set(key, job);
+  void job.finally(() => downloadInflight.delete(key));
+  return job;
+}
+
+/** 모델 보유 시에만 성공하는 온디바이스 번역 시도(다운로드 유발 없음 — 미보유면 즉시 실패). */
+async function translateOnDevice(
+  text: string,
+  from: LangCode,
+  to: LangCode,
+  timeoutMs: number,
+): Promise<string> {
+  const result = await withTimeout(
+    TranslateText.translate({
+      text,
+      sourceLanguage: LANG_TO_MLKIT[from],
+      targetLanguage: LANG_TO_MLKIT[to],
+      downloadModelIfNeeded: false,
+    }),
+    timeoutMs,
+  );
+  // 성공 = 두 언어 모델 모두 보유 확인
+  modelReady.add(from);
+  modelReady.add(to);
+  return String(result);
+}
 
 // TODO :: 외국어 번역 static 메소드
 /**import { translate } from '@/lib/translate';
  * 기본: 문장 + 번역할 언어 (원본 언어는 자동 감지)
  * const ja = await translate('내일까지 자료 확인해주세요', 'ja');
- * 
+ *
  * 원본 언어를 알면 명시 (감지 생략, 더 정확)
  * const ko = await translate('Hello everyone', 'ko', 'en');
- * 
+ *
  */
 
 /**
@@ -84,62 +162,50 @@ export async function translate(
 /**
  * translate() 의 상세판 — 실패 시 마지막 에러 메시지를 함께 돌려준다(폴백 판단/로깅용).
  *
- * @param timeoutMs 1회 시도 타임아웃. 전사 탭은 짧게 줘(모델 보유 시 즉시, 미보유 시 빠르게
- *   실패시켜 서버 번역으로 폴백) UX 를 살린다. 생략 시 라이브 회의용 기본값(60초).
+ * 동작: 먼저 다운로드 없이(downloadModelIfNeeded:false) 번역을 시도한다 — 모델이 있으면
+ * 즉시 성공(1초 안쪽), 없으면 즉시 실패하므로 "모델 보유 여부 판별"을 겸한다.
+ * 미보유 시 다운로드를 전역 직렬 큐에 등록하고,
+ *  - waitForModel=true(기본, 라이브 회의): 다운로드 완료를 기다렸다가 번역해 반환.
+ *  - waitForModel=false(전사 탭): 즉시 실패를 반환해 호출부가 서버 번역으로 바로 폴백하게
+ *    한다(수 초 대기 제거). 다운로드는 백그라운드에서 계속되어 다음 번역부턴 온디바이스.
+ *
+ * @param timeoutMs 모델 보유 시 번역 1회 타임아웃. 생략 시 기본 30초(안전장치).
+ * @param waitForModel 모델 미보유 시 다운로드 완료를 기다릴지 여부.
  */
 export async function translateDetailed(
   text: string,
   targetLang: LangCode,
   sourceLang?: LangCode,
   timeoutMs: number = TRANSLATE_TIMEOUT_MS,
+  waitForModel: boolean = true,
 ): Promise<{ text: string | null; error: string | null }> {
   const from = sourceLang ?? detectLang(text);
   if (from === targetLang || Platform.OS === 'web') return { text: null, error: null };
+
+  // 1) 다운로드 없이 시도 — 모델이 있으면 여기서 끝(즉시), 없으면 즉시 실패로 넘어감.
   let lastError: string | null = null;
-  // 최대 2회 시도 — ML Kit 최초 모델 다운로드가 transient 하게 실패하는 경우가 있어
-  // 첫 실패 시 짧은 백오프 후 1회 재시도하면 회복되는 일이 많다(특히 ja·zh).
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  try {
+    return { text: await translateOnDevice(text, from, targetLang, timeoutMs), error: null };
+  } catch (e) {
+    lastError = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+  }
+
+  // 2) 모델 미보유(또는 stall) → 다운로드를 큐에 등록.
+  const download = ensureModels(from, targetLang);
+
+  // 전사 탭: 기다리지 않고 즉시 실패 반환 → 호출부가 서버 번역으로 폴백. 다운로드는 백그라운드 진행.
+  if (!waitForModel) return { text: null, error: lastError };
+
+  // 라이브 회의: 서버 폴백이 없으므로 다운로드 완료를 기다렸다가 번역.
+  if (await download) {
     try {
-      const result = await withTimeout(
-        TranslateText.translate({
-          text,
-          sourceLanguage: LANG_TO_MLKIT[from],
-          targetLanguage: LANG_TO_MLKIT[targetLang],
-          downloadModelIfNeeded: true,
-        }),
-        timeoutMs,
-      );
-      return { text: String(result), error: null };
+      return { text: await translateOnDevice(text, from, targetLang, timeoutMs), error: null };
     } catch (e) {
       lastError = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
-      console.warn(`[translate] 번역 실패 (${attempt}/2) ${from}→${targetLang}:`, e);
-      if (attempt < 2) await new Promise((r) => setTimeout(r, 1500));
+      console.warn(`[translate] 번역 실패 ${from}→${targetLang}:`, e);
     }
   }
   return { text: null, error: lastError };
-}
-
-let prefetched = false;
-
-/** ko→target 더미 번역으로 해당 언어 모델을 확보. 성공 여부 반환(실패해도 throw 안 함). */
-async function downloadModel(target: Exclude<LangCode, 'ko'>): Promise<boolean> {
-  try {
-    // 이미 있으면 즉시 통과, 없으면 다운로드 유도. 멈춘 다운로드로 프리페치가 영원히
-    // pending 되지 않게 타임아웃을 건다(실패해도 false 반환 → 다음 실행에서 재시도).
-    await withTimeout(
-      TranslateText.translate({
-        text: '.',
-        sourceLanguage: TranslateLanguage.KOREAN,
-        targetLanguage: LANG_TO_MLKIT[target],
-        downloadModelIfNeeded: true,
-      }),
-      MODEL_DOWNLOAD_TIMEOUT_MS,
-    );
-    return true;
-  } catch (e) {
-    console.warn('[translate] 모델 프리페치 실패:', target, e);
-    return false;
-  }
 }
 
 /**
@@ -147,19 +213,13 @@ async function downloadModel(target: Exclude<LangCode, 'ko'>): Promise<boolean> 
  * "기본 내장" UX: 회의 진입 전에 모델을 미리 받아둬 첫 번역 지연을 없앤다.
  * (ML Kit 은 모델의 APK 번들을 지원하지 않아 최초 1회 런타임 다운로드가 최선)
  *
- * en·ja·zh 를 **한 번에 하나씩(순차)** 받는다. 병렬로 받으면 ML Kit 모델 동시 다운로드가
- * stall 되어 ja·zh 가 영영 안 받아지고(무한 로딩), 그 stuck 다운로드가 이후 on-demand
- * 번역까지 오염시키는 문제가 있었다. 순차 다운로드는 이 stall 을 피한다.
- * 하나가 실패해도 나머지는 계속 시도하고, 전부 성공해야 prefetched 를 세워 다음 실행에서
- * 재시도할 여지를 남긴다.
+ * 모든 다운로드는 ensureModels 의 전역 직렬 큐를 타므로 온디맨드 번역과 겹쳐도 동시
+ * 다운로드 stall 이 없다. 실패한 언어는 이후 번역 요청이 필요할 때 자연 재시도된다
+ * (앱 재시작 불필요).
  */
 export async function prefetchTranslationModels(): Promise<void> {
-  if (prefetched || Platform.OS === 'web') return;
-
-  let allOk = true;
+  if (Platform.OS === 'web') return;
   for (const target of ['en', 'ja', 'zh'] as const) {
-    const ok = await downloadModel(target);
-    if (!ok) allOk = false;
+    await ensureModels('ko', target);
   }
-  prefetched = allOk;
 }
