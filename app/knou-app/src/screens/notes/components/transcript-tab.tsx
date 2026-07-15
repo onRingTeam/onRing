@@ -5,7 +5,7 @@ import { Feather } from '@expo/vector-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { detectLang, translate } from '@/lib/translate';
+import { detectLang, translateDetailed } from '@/lib/translate';
 import { useSettingsStore } from '@/store';
 import { fromBackendLang, type MeetingMessageDto } from '@/types/meeting';
 import { SPEAKER_COLORS } from './summary-tab';
@@ -21,6 +21,8 @@ interface TransState {
    * (text=null 이지만 '실패'가 아님 — 실패 문구 대신 원문을 그대로 노출한다.)
    */
   sameLang: boolean;
+  /** 실패 시 ML Kit 에러 메시지(진단용 임시 표시). */
+  error: string | null;
 }
 
 /**
@@ -71,7 +73,7 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
       if (sourceLang === targetLang) {
         setTrans((p) => ({
           ...p,
-          [m.messageId]: { loading: false, text: null, downloading: false, sameLang: true },
+          [m.messageId]: { loading: false, text: null, downloading: false, sameLang: true, error: null },
         }));
         return;
       }
@@ -79,7 +81,7 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
       // 누를 때마다 설정 언어(myLanguage)로 새로 번역 — 이전에 실패했어도 그대로 재시도.
       setTrans((p) => ({
         ...p,
-        [m.messageId]: { loading: true, text: null, downloading: false, sameLang: false },
+        [m.messageId]: { loading: true, text: null, downloading: false, sameLang: false, error: null },
       }));
       // 번역이 오래 걸리면(=모델 최초 다운로드) '다운로드 중' 안내를 켠다. 빠르면(모델 보유) 타이머 취소.
       const slowTimer = setTimeout(() => {
@@ -89,11 +91,11 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
           return { ...p, [m.messageId]: { ...cur, downloading: true } };
         });
       }, MODEL_DOWNLOAD_HINT_DELAY_MS);
-      const result = await translate(m.original, targetLang, sourceLang);
+      const { text: result, error } = await translateDetailed(m.original, targetLang, sourceLang);
       clearTimeout(slowTimer);
       setTrans((p) => ({
         ...p,
-        [m.messageId]: { loading: false, text: result, downloading: false, sameLang: false },
+        [m.messageId]: { loading: false, text: result, downloading: false, sameLang: false, error },
       }));
     },
     [trans, targetLang],
@@ -169,6 +171,12 @@ export function TranscriptTab({ messages, isLoading, isError }: TranscriptTabPro
                           ? m.original
                           : (t.text ?? '번역에 실패했어요. 다시 눌러 주세요.')}
                       </ThemedText>
+                      {/* 진단용 임시 표시 — 실패 시 실제 ML Kit 에러 노출 (원인 확인 후 제거) */}
+                      {!t.text && !t.sameLang && t.error && (
+                        <ThemedText type="small" themeColor="textSecondary" style={styles.diagError}>
+                          {t.error}
+                        </ThemedText>
+                      )}
                     </View>
                   )}
                   <TouchableOpacity
@@ -265,5 +273,10 @@ const styles = StyleSheet.create({
   },
   downloadingText: {
     fontSize: 12,
+  },
+  diagError: {
+    fontSize: 11,
+    marginTop: Spacing.one,
+    opacity: 0.8,
   },
 });
