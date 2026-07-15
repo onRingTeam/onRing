@@ -47,7 +47,7 @@ export async function endMeeting(meetingId: number): Promise<void> {
 }
 
 /**
- * 회의 나가기(참여자, "재참여 안 함"). 내 참석 레코드 use_yn=N 처리 → 진행중 회의에서 빠져
+ * 회의 나가기(참여자). 내 참석 레코드 use_yn=N 처리 → 진행중 회의에서 제외되어
  * 홈에서 새 회의 개설이 가능해진다. 개설자는 호출 불가(서버 403 — 종료를 사용).
  * POST /api/meetings/{meetingId}/leave
  */

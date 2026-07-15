@@ -44,7 +44,9 @@ export function BottomNav() {
   };
 
   const handleMeeting = () => {
-    if (!activeMeeting) {
+    // 스토어 최신값 사용 (나가기 직후 클로저에 옛 activeMeeting 이 남을 수 있음)
+    const current = useMeetingStore.getState().activeMeeting;
+    if (!current) {
       // 진행중 회의 없음 → 홈으로 이동 후 회의 생성 바텀시트
       router.push('/(tabs)' as any);
       setShowCreateSheet(true);
@@ -55,7 +57,7 @@ export function BottomNav() {
       // 진행중 회의로 이동
       router.push({
         pathname: '/(tabs)/meeting',
-        params: { meetingId: String(activeMeeting.meetingId), code: activeMeeting.meetingCode },
+        params: { meetingId: String(current.meetingId), code: current.meetingCode },
       } as any);
     }
   };

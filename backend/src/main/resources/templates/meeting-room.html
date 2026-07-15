@@ -868,6 +868,10 @@ MeshVoiceCall.prototype.stop = function () {
 
 /** @type {MeshVoiceCall|null} */
 let mesh = null;
+/** getUserMedia 실패 alert 는 세션당 1회만 (STOMP 재연결 스팸 방지) */
+let voiceFailAlerted = false;
+/** startVoice 동시 호출 가드 (onConnect 중복 방지) */
+let voiceStarting = false;
 
 function sendSignal(msg) {
     if (!connected || !client.connected) return;
@@ -878,6 +882,8 @@ function sendSignal(msg) {
 }
 
 async function startVoice() {
+    if (voiceStarting) return;
+    voiceStarting = true;
     // 재연결 시 이전 세션 정리 후 새로 join
     if (mesh) {
         try { mesh.stop(); } catch (e) { /* ignore */ }
@@ -891,15 +897,21 @@ async function startVoice() {
         if (micOn) startStt();
     } catch (e) {
         console.warn('[voice] start 실패', e);
+        try { mesh.stop(); } catch (err) { /* ignore */ }
         mesh = null;
-        // 음성통화만 실패 — 채팅/자막은 계속. 마이크 UI 는 STT 전용으로 유지.
-        void appAlert({
-            title: '음성통화를 시작할 수 없어요',
-            message: '마이크 권한을 허용하거나 HTTPS 환경을 확인해 주세요. 채팅·자막은 계속 사용할 수 있어요.',
-            icon: 'mic-off-outline',
-            iconTone: 'error',
-            buttons: [{ key: 'ok', text: '확인', style: 'primary' }],
-        });
+        // 음성통화만 실패 — 채팅/자막은 계속. 재연결마다 알림 띄우지 않음.
+        if (!voiceFailAlerted) {
+            voiceFailAlerted = true;
+            void appAlert({
+                title: '음성통화를 시작할 수 없어요',
+                message: '마이크 권한을 허용하거나 HTTPS 환경을 확인해 주세요. 채팅·자막은 계속 사용할 수 있어요.',
+                icon: 'mic-off-outline',
+                iconTone: 'error',
+                buttons: [{ key: 'ok', text: '확인', style: 'primary' }],
+            });
+        }
+    } finally {
+        voiceStarting = false;
     }
 }
 
@@ -1048,14 +1060,13 @@ if (IS_HOST) {
         returnToApp('ended', false);
     };
 } else {
-    // 참여자 → 회의 나가기 버튼. "재참여 여부" 선택은 앱(네이티브 Alert)에서 묻는다.
-    // 앱이 딥링크 내비게이션을 가로채므로 페이지는 그대로 남는다 — 취소하면 회의를 계속 이어갈 수 있게
-    // closed 를 세우지 않는다 (실제 정리는 앱이 화면을 언마운트하며 수행).
+    // 참여자 → 나가기 버튼. 확인 UI(안 나가기/나가기)는 앱(네이티브 AppAlert)에서 처리.
+    // 앱이 딥링크를 가로채므로 페이지는 남음 — 안 나가기면 회의 계속, closed 를 세우지 않음.
     leaveBtn.style.display = '';
     leaveBtn.onclick = () => {
         if (closed) return;
-        // 나가기 확인 전에 leave 시그널은 pagehide/언마운트에서 처리.
-        // 사용자가 앱 Alert 에서 취소해도 페이지가 남으므로 여기서 stopVoice 하지 않음.
+        // leave 시그널·미디어 정리는 실제 퇴장(pagehide/언마운트) 때 처리.
+        // 안 나가기 선택 시 페이지가 살아 있으므로 여기서 stopVoice 하지 않음.
         returnToApp('left', false);
     };
 }
