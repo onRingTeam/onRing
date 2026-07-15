@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, TextInput, TouchableOpacity, View } from 'react-native';
 import { useRouter } from 'expo-router';
 
@@ -7,7 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { useUiStore } from '@/store';
+import { useSettingsStore, useUiStore } from '@/store';
 import type { LangCode } from '@/types/meeting';
 import { useCreateMeeting } from '../hooks';
 
@@ -23,10 +23,19 @@ export function CreateMeetingSheet() {
   const colors = useTheme();
   const show = useUiStore((s) => s.showCreateSheet);
   const setShow = useUiStore((s) => s.setShowCreateSheet);
+  const myLanguage = useSettingsStore((s) => s.myLanguage);
   const createMutation = useCreateMeeting();
 
   const [title, setTitle] = useState('');
-  const [language, setLanguage] = useState<LangCode>('ko');
+  // 기본 언어는 설정값(myLanguage)을 따른다. 개설 시 여기서 다른 언어를 골라도
+  // 로컬 상태만 바뀌며 설정값은 변경되지 않는다.
+  const [language, setLanguage] = useState<LangCode>(myLanguage);
+
+  // 시트를 열 때마다 현재 설정 언어로 초기화한다.
+  // (시트는 항상 마운트된 채 visible만 토글되므로 open 시점에 동기화)
+  useEffect(() => {
+    if (show) setLanguage(myLanguage);
+  }, [show, myLanguage]);
 
   const close = () => {
     setShow(false);
