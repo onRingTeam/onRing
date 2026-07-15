@@ -78,8 +78,18 @@ export async function translate(
   targetLang: LangCode,
   sourceLang?: LangCode,
 ): Promise<string | null> {
+  return (await translateDetailed(text, targetLang, sourceLang)).text;
+}
+
+/** translate() 의 상세판 — 실패 시 마지막 에러 메시지를 함께 돌려준다(진단/표시용). */
+export async function translateDetailed(
+  text: string,
+  targetLang: LangCode,
+  sourceLang?: LangCode,
+): Promise<{ text: string | null; error: string | null }> {
   const from = sourceLang ?? detectLang(text);
-  if (from === targetLang || Platform.OS === 'web') return null;
+  if (from === targetLang || Platform.OS === 'web') return { text: null, error: null };
+  let lastError: string | null = null;
   // 최대 2회 시도 — ML Kit 최초 모델 다운로드가 transient 하게 실패하는 경우가 있어
   // 첫 실패 시 짧은 백오프 후 1회 재시도하면 회복되는 일이 많다(특히 ja·zh).
   for (let attempt = 1; attempt <= 2; attempt++) {
@@ -93,13 +103,14 @@ export async function translate(
         }),
         TRANSLATE_TIMEOUT_MS,
       );
-      return String(result);
+      return { text: String(result), error: null };
     } catch (e) {
+      lastError = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
       console.warn(`[translate] 번역 실패 (${attempt}/2) ${from}→${targetLang}:`, e);
       if (attempt < 2) await new Promise((r) => setTimeout(r, 1500));
     }
   }
-  return null;
+  return { text: null, error: lastError };
 }
 
 let prefetched = false;
