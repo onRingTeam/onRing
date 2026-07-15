@@ -31,6 +31,12 @@ export function detectLang(text: string): LangCode {
  */
 const TRANSLATE_TIMEOUT_MS = 60_000;
 
+/**
+ * 모델 최초 다운로드(프리페치)용 타임아웃 — 언어당 ~30MB라 대화형보다 넉넉히 잡는다.
+ * 느린 네트워크에서 정상 다운로드가 60초를 넘겨 실패로 처리되는 걸 막기 위함.
+ */
+const MODEL_DOWNLOAD_TIMEOUT_MS = 120_000;
+
 /** p 가 ms 안에 끝나지 않으면 reject. 성공 시 결과 그대로 통과. */
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -74,21 +80,26 @@ export async function translate(
 ): Promise<string | null> {
   const from = sourceLang ?? detectLang(text);
   if (from === targetLang || Platform.OS === 'web') return null;
-  try {
-    const result = await withTimeout(
-      TranslateText.translate({
-        text,
-        sourceLanguage: LANG_TO_MLKIT[from],
-        targetLanguage: LANG_TO_MLKIT[targetLang],
-        downloadModelIfNeeded: true,
-      }),
-      TRANSLATE_TIMEOUT_MS,
-    );
-    return String(result);
-  } catch (e) {
-    console.warn('[translate] 번역 실패', from, '→', targetLang, e);
-    return null;
+  // 최대 2회 시도 — ML Kit 최초 모델 다운로드가 transient 하게 실패하는 경우가 있어
+  // 첫 실패 시 짧은 백오프 후 1회 재시도하면 회복되는 일이 많다(특히 ja·zh).
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const result = await withTimeout(
+        TranslateText.translate({
+          text,
+          sourceLanguage: LANG_TO_MLKIT[from],
+          targetLanguage: LANG_TO_MLKIT[targetLang],
+          downloadModelIfNeeded: true,
+        }),
+        TRANSLATE_TIMEOUT_MS,
+      );
+      return String(result);
+    } catch (e) {
+      console.warn(`[translate] 번역 실패 (${attempt}/2) ${from}→${targetLang}:`, e);
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 1500));
+    }
   }
+  return null;
 }
 
 let prefetched = false;
@@ -105,7 +116,7 @@ async function downloadModel(target: Exclude<LangCode, 'ko'>): Promise<boolean> 
         targetLanguage: LANG_TO_MLKIT[target],
         downloadModelIfNeeded: true,
       }),
-      TRANSLATE_TIMEOUT_MS,
+      MODEL_DOWNLOAD_TIMEOUT_MS,
     );
     return true;
   } catch (e) {
@@ -119,15 +130,19 @@ async function downloadModel(target: Exclude<LangCode, 'ko'>): Promise<boolean> 
  * "기본 내장" UX: 회의 진입 전에 모델을 미리 받아둬 첫 번역 지연을 없앤다.
  * (ML Kit 은 모델의 APK 번들을 지원하지 않아 최초 1회 런타임 다운로드가 최선)
  *
- * en·ja·zh 를 **병렬**로 받는다. 순차로 받으면 ja·zh 가 en 뒤에 밀려 첫 번역이
- * 오래 걸리거나 안 뜨는 문제가 있었다. 하나라도 실패하면 prefetched 를 세우지 않아
- * 다음 호출(다음 앱 실행)에서 재시도한다.
+ * en·ja·zh 를 **한 번에 하나씩(순차)** 받는다. 병렬로 받으면 ML Kit 모델 동시 다운로드가
+ * stall 되어 ja·zh 가 영영 안 받아지고(무한 로딩), 그 stuck 다운로드가 이후 on-demand
+ * 번역까지 오염시키는 문제가 있었다. 순차 다운로드는 이 stall 을 피한다.
+ * 하나가 실패해도 나머지는 계속 시도하고, 전부 성공해야 prefetched 를 세워 다음 실행에서
+ * 재시도할 여지를 남긴다.
  */
 export async function prefetchTranslationModels(): Promise<void> {
   if (prefetched || Platform.OS === 'web') return;
 
-  const results = await Promise.all(
-    (['en', 'ja', 'zh'] as const).map((target) => downloadModel(target)),
-  );
-  prefetched = results.every(Boolean);
+  let allOk = true;
+  for (const target of ['en', 'ja', 'zh'] as const) {
+    const ok = await downloadModel(target);
+    if (!ok) allOk = false;
+  }
+  prefetched = allOk;
 }
