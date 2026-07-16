@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>서버 로그</title>
+    <style>
+        :root {
+            --bg: #0e1626; --panel: #1a2438; --line: rgba(232,237,245,.08);
+            --ink: #e8edf5; --muted: #8a99b8; --navy: #16305c; --accent: #4a90d9;
+            --error: #ff6b6b; --warn: #ffd166; --debug: #6b7a96; --ok: #34d399;
+        }
+        * { box-sizing: border-box; }
+        html, body { height: 100%; margin: 0; }
+        body {
+            display: flex; flex-direction: column; background: var(--bg); color: var(--ink);
+            font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+        }
+
+        .header {
+            flex: none; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+            padding: 12px 16px; background: var(--navy); border-bottom: 1px solid var(--line);
+        }
+        .title { font-size: 16px; font-weight: 700; margin: 0; display: flex; align-items: center; gap: 8px; }
+        .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+        .dot.on { background: var(--ok); } .dot.off { background: var(--error); }
+        .spacer { flex: 1; }
+        .meta { font-size: 12px; color: rgba(232,237,245,.65); font-variant-numeric: tabular-nums; }
+
+        .controls {
+            flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+            padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+        }
+        .search {
+            flex: 1; min-width: 160px; background: var(--bg); color: var(--ink);
+            border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; font-size: 13px;
+        }
+        .search:focus { outline: none; border-color: var(--accent); }
+        select, .btn {
+            background: var(--bg); color: var(--ink); border: 1px solid var(--line);
+            border-radius: 8px; padding: 7px 12px; font-size: 13px; font-weight: 600; cursor: pointer;
+        }
+        .btn:hover { border-color: var(--accent); }
+        .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+        .btn.active { background: var(--warn); border-color: var(--warn); color: #16233d; }
+
+        .log {
+            flex: 1; overflow-y: auto; padding: 10px 14px;
+            font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            white-space: pre-wrap; word-break: break-all;
+        }
+        .row { padding: 1px 0; border-bottom: 1px solid rgba(232,237,245,.03); }
+        .row.ERROR { color: var(--error); }
+        .row.WARN  { color: var(--warn); }
+        .row.DEBUG, .row.TRACE { color: var(--debug); }
+        .row.hide { display: none; }
+        .empty { color: var(--muted); padding: 24px 0; text-align: center; font-family: inherit; }
+
+        .jump {
+            position: fixed; right: 18px; bottom: 18px; display: none;
+            background: var(--accent); color: #fff; border: 0; border-radius: 999px;
+            padding: 10px 16px; font-size: 13px; font-weight: 700; cursor: pointer;
+            box-shadow: 0 4px 14px rgba(0,0,0,.4);
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1 class="title"><span id="dot" class="dot"></span>서버 실시간 로그</h1>
+    <span class="spacer"></span>
+    <span id="meta" class="meta">0줄</span>
+</div>
+
+<div class="controls">
+    <input id="search" class="search" type="search" placeholder="필터 (텍스트 포함 검색)">
+    <select id="level" title="최소 레벨">
+        <option value="ALL" selected>전체</option>
+        <option value="DEBUG">DEBUG+</option>
+        <option value="INFO">INFO+</option>
+        <option value="WARN">WARN+</option>
+        <option value="ERROR">ERROR</option>
+    </select>
+    <button id="pause" class="btn">⏸ 일시정지</button>
+    <button id="clear" class="btn">지우기</button>
+    <a href="/admin/logs/download"><button class="btn primary">⬇ 다운로드 (1만 줄)</button></a>
+</div>
+
+<div id="log" class="log"><div class="empty" id="empty">로그를 불러오는 중…</div></div>
+<button id="jump" class="jump">↓ 최신으로</button>
+
+<script>
+'use strict';
+
+const logEl = document.getElementById('log');
+const emptyEl = document.getElementById('empty');
+const dotEl = document.getElementById('dot');
+const metaEl = document.getElementById('meta');
+const searchEl = document.getElementById('search');
+const levelEl = document.getElementById('level');
+const pauseBtn = document.getElementById('pause');
+const clearBtn = document.getElementById('clear');
+const jumpBtn = document.getElementById('jump');
+
+/* 화면에 유지할 최대 항목 수 (DOM 보호). 다운로드는 서버가 1만 줄 제공. */
+const MAX_ROWS = 1000;
+const LEVEL_ORDER = { TRACE: 0, DEBUG: 1, INFO: 2, WARN: 3, ERROR: 4 };
+
+let paused = false;
+let pending = [];      // 일시정지 동안 쌓아둘 항목
+let total = 0;
+
+/* "yyyy-MM-dd HH:mm:ss.SSS LEVEL [..." 형식에서 레벨 추출 */
+function levelOf(entry) {
+    const m = entry.slice(23, 30).match(/TRACE|DEBUG|INFO|WARN|ERROR/);
+    return m ? m[0] : 'INFO';
+}
+
+function matchesFilter(row) {
+    const q = searchEl.value.trim().toLowerCase();
+    const min = levelEl.value;
+    const okLevel = min === 'ALL' || (LEVEL_ORDER[row.dataset.level] ?? 2) >= LEVEL_ORDER[min];
+    const okText = !q || row.textContent.toLowerCase().includes(q);
+    return okLevel && okText;
+}
+
+function nearBottom() {
+    return logEl.scrollHeight - logEl.scrollTop - logEl.clientHeight < 60;
+}
+
+function addEntry(entry) {
+    emptyEl.style.display = 'none';
+    const stick = nearBottom();
+    const row = document.createElement('div');
+    const lv = levelOf(entry);
+    row.className = 'row ' + lv;
+    row.dataset.level = lv;
+    row.textContent = entry;
+    if (!matchesFilter(row)) row.classList.add('hide');
+    logEl.appendChild(row);
+    total++;
+    while (logEl.children.length > MAX_ROWS + 1) logEl.children[1].remove(); // [0]=empty
+    if (stick) logEl.scrollTop = logEl.scrollHeight;
+    metaEl.textContent = total.toLocaleString() + '줄 수신';
+}
+
+/* 필터 변경 → 기존 행 표시/숨김 재계산 */
+function refilter() {
+    for (const row of logEl.querySelectorAll('.row')) {
+        row.classList.toggle('hide', !matchesFilter(row));
+    }
+}
+searchEl.addEventListener('input', refilter);
+levelEl.addEventListener('change', refilter);
+
+pauseBtn.onclick = () => {
+    paused = !paused;
+    pauseBtn.textContent = paused ? '▶ 재개' : '⏸ 일시정지';
+    pauseBtn.classList.toggle('active', paused);
+    if (!paused) {
+        for (const e of pending) addEntry(e);
+        pending = [];
+    }
+};
+
+clearBtn.onclick = () => {
+    for (const row of logEl.querySelectorAll('.row')) row.remove();
+    total = 0;
+    metaEl.textContent = '0줄';
+};
+
+jumpBtn.onclick = () => { logEl.scrollTop = logEl.scrollHeight; };
+logEl.addEventListener('scroll', () => {
+    jumpBtn.style.display = nearBottom() ? 'none' : 'block';
+});
+
+function receive(entry) {
+    if (paused) {
+        pending.push(entry);
+        if (pending.length > MAX_ROWS) pending.shift();
+    } else {
+        addEntry(entry);
+    }
+}
+
+/* 초기 로드: 최근 1,000줄 → 이후 SSE 실시간. EventSource 는 끊기면 자동 재연결. */
+fetch('/admin/logs/recent?lines=1000')
+    .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+    .then((list) => {
+        emptyEl.style.display = 'none';
+        if (list.length === 0) {
+            emptyEl.textContent = '아직 로그가 없습니다.';
+            emptyEl.style.display = '';
+        }
+        for (const e of list) addEntry(e);
+        logEl.scrollTop = logEl.scrollHeight;
+
+        const es = new EventSource('/admin/logs/stream');
+        es.onopen = () => { dotEl.className = 'dot on'; };
+        es.onerror = () => { dotEl.className = 'dot off'; };
+        es.onmessage = (ev) => {
+            try { receive(JSON.parse(ev.data)); } catch (e) { /* ignore */ }
+        };
+    })
+    .catch(() => {
+        emptyEl.textContent = '로그를 불러오지 못했습니다. (권한 또는 서버 상태 확인)';
+        emptyEl.style.display = '';
+    });
+</script>
+</body>
+</html>

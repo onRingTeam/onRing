@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>웹소켓 테스트 페이지 1</title>
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7/bundles/stomp.umd.min.js"></script>
+    <style>
+        body { font-family: -apple-system, sans-serif; margin: 0; padding: .75rem;
+               background: #f8fafc; color: #1e293b; display: flex; flex-direction: column; height: 100vh; box-sizing: border-box; }
+        h2 { margin: 0 0 .25rem; font-size: .95rem; }
+        .status { font-size: .75rem; margin-bottom: .5rem; }
+        .status.on { color: #16a34a; } .status.off { color: #dc2626; }
+        .row { display: flex; gap: .35rem; margin-bottom: .5rem; }
+        input { flex: 1; padding: .4rem; border: 1px solid #cbd5e1; border-radius: 6px; font-size: .85rem; min-width: 0; }
+        button { padding: .4rem .7rem; border: 0; border-radius: 6px; background: #2563eb; color: #fff; font-size: .85rem; cursor: pointer; white-space: nowrap; }
+        button:disabled { opacity: .5; cursor: default; }
+        #log { flex: 1; overflow-y: auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: .5rem; font-size: .8rem; }
+        .msg { margin: .15rem 0; } .msg .who { font-weight: 600; color: #2563eb; }
+        .msg.sys { color: #94a3b8; font-style: italic; }
+    </style>
+</head>
+<body>
+<h2>webSocketTest1 <span id="status" class="status off">연결 중…</span></h2>
+<div class="row">
+    <input id="room" value="1" placeholder="방 번호" style="max-width:80px;" disabled>
+    <button id="join" disabled>입장</button>
+    <span id="curRoom" style="font-size:.78rem;color:#64748b;align-self:center;">미입장</span>
+</div>
+<div class="row">
+    <input id="name" value="패널1" placeholder="이름" style="max-width:90px;">
+    <input id="input" placeholder="메시지 입력 후 Enter" disabled>
+    <button id="send" disabled>전송</button>
+</div>
+<div id="log"></div>
+
+<script>
+    const SENDER_LANG = 'KO';   // 이 패널이 보내는 발화 언어
+
+    const logEl = document.getElementById('log');
+    const statusEl = document.getElementById('status');
+    const inputEl = document.getElementById('input');
+    const sendBtn = document.getElementById('send');
+    const nameEl = document.getElementById('name');
+    const roomEl = document.getElementById('room');
+    const joinBtn = document.getElementById('join');
+    const curRoomEl = document.getElementById('curRoom');
+
+    let currentSub = null;   // 현재 구독 핸들
+    let currentRoom = null;  // 현재 입장한 방
+
+    function log(html, cls) {
+        const d = document.createElement('div');
+        d.className = 'msg' + (cls ? ' ' + cls : '');
+        d.innerHTML = html;
+        logEl.appendChild(d);
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    const client = new StompJs.Client({
+        webSocketFactory: () => new SockJS('/ws'),
+        reconnectDelay: 3000,
+        // TODO Phase 6: connectHeaders 에 { Authorization: 'Bearer <jwt>' } 추가 (운영 인증)
+    });
+
+    function joinRoom(room) {
+        if (!room) return;
+        if (currentSub) { currentSub.unsubscribe(); log('방 ' + currentRoom + ' 나감', 'sys'); }
+        currentRoom = room;
+        currentSub = client.subscribe('/topic/meetings/' + room, (frame) => {
+            const m = JSON.parse(frame.body);
+            log('<span class="who">' + m.senderName + '</span> · ' + m.message
+                + ' <small>(' + (m.lang || '-') + ')</small>');
+        });
+        curRoomEl.textContent = '방 ' + room;
+        log('방 ' + room + ' 입장 · 구독 시작', 'sys');
+        inputEl.disabled = false; sendBtn.disabled = false;
+    }
+
+    client.onConnect = () => {
+        statusEl.textContent = '연결됨'; statusEl.className = 'status on';
+        roomEl.disabled = false; joinBtn.disabled = false;
+        joinRoom(roomEl.value.trim());   // 기본 방 자동 입장
+    };
+    client.onWebSocketClose = () => {
+        statusEl.textContent = '끊김'; statusEl.className = 'status off';
+        inputEl.disabled = true; sendBtn.disabled = true; roomEl.disabled = true; joinBtn.disabled = true;
+        currentSub = null;
+    };
+    client.onStompError = (f) => log('STOMP 오류: ' + f.headers['message'], 'sys');
+    client.activate();
+
+    joinBtn.onclick = () => joinRoom(roomEl.value.trim());
+    roomEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(roomEl.value.trim()); });
+
+    function send() {
+        const text = inputEl.value.trim();
+        if (!text || !currentRoom) return;
+        client.publish({
+            destination: '/app/meetings/' + currentRoom + '/send',
+            body: JSON.stringify({ senderName: nameEl.value || '익명', message: text, lang: SENDER_LANG }),
+        });
+        inputEl.value = '';
+    }
+    sendBtn.onclick = send;
+    inputEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') send(); });
+</script>
+</body>
+</html>

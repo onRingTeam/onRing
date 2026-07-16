@@ -1,1 +1,5 @@
 .idea
+# app/ 루트에 실수로 생긴 빈 lockfile (실제 프로젝트는 app/knou-app).
+# 주의: app/knou-app/package-lock.json 은 절대 ignore 금지 — EAS 업로드가 .gitignore 를 적용해
+# lockfile 이 빠진 채 빌드되는 사고가 있었음 (2026-07-13).
+/app/package-lock.json

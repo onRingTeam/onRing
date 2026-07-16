@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>OnRing  테스트 홈페이지</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body { height: 100%; margin: 0; }
+        body { display: flex; flex-direction: column; font-family: -apple-system, sans-serif; }
+
+        .header { padding: .75rem 1rem; background: #0f172a; color: #e2e8f0; }
+        .header h1 { margin: 0 0 .25rem; font-size: 1.1rem; }
+        .header .msg { color: #38bdf8; margin: 0; font-size: .85rem; }
+        .header .time { color: #94a3b8; margin: .15rem 0 0; font-size: .8rem; }
+
+        /* 화면을 좌우 반으로 분할 */
+        .split { flex: 1; display: flex; min-height: 0; }
+        .pane { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+        .pane + .pane { border-left: 2px solid #334155; }
+        .pane .label { padding: .35rem .75rem; background: #1e293b; color: #cbd5e1; font-size: .8rem; font-weight: 600; }
+        .pane iframe { flex: 1; width: 100%; border: 0; }
+    </style>
+</head>
+<body>
+<div class="header">
+    <h1>🔔 OnRing 웹소켓 연결 테스트</h1>
+    <p class="msg" th:text="${message}">메시지</p>
+    <p class="time">서버 시각: <span th:text="${now}">now</span></p>
+</div>
+
+<div class="split">
+    <div class="pane">
+        <div class="label">webSocketTest1</div>
+        <iframe src="/webSocketTest1" title="webSocketTest1"></iframe>
+    </div>
+    <div class="pane">
+        <div class="label">webSocketTest2</div>
+        <iframe src="/webSocketTest2" title="webSocketTest2"></iframe>
+    </div>
+</div>
+</body>
+</html>

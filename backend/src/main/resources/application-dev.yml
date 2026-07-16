@@ -1,6 +1,6 @@
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3306/knou_dev?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
+    url: jdbc:mysql://localhost:33306/onRingDb?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -24,8 +24,16 @@ whitelist:
     - ::1
     - "0:0:0:0:0:0:0:1"   # 자바 remoteAddr의 IPv6 루프백 풀 표기
     - 100.122.135.63
-    - 103.246.172.52    # 내 맥 공인 IP
+    - 103.246.172.52    # SMH 맥 공인 IP
     - 58.29.142.175     # 홈서버/집 네트워크 공인 IP
-    # 공인 IP 추가 (예시)
-    # - 1.2.3.4
+    # 공인 IP 추가
+    - 125.178.150.109   #KYA 공인 IP
+    - 192.168.219.100   # SMH 맥 로컬(LAN) IP
+    - 192.168.0.69
+    - 1.221.20.203
+    # SMH 집 회선 IPv6 /64 대역 (임시주소가 회전해도 prefix는 고정 → 대역으로 등록)
+    - "2406:5900:112d:6083::/64"
     # - 5.6.7.8
+    #KYA IP
+    - 117.111.9.95
+    - "2001:4430:5052:cd50:4441::/64"

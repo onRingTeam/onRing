@@ -1,5 +1,31 @@
 spring:
   application:
     name: knou-api
+  # .env 파일을 환경변수처럼 로드 (DB_USERNAME/DB_PASSWORD 등)
+  # optional 이라 파일이 없는 운영 환경(실제 env 주입)에서는 무시됨
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:backend/.env[.properties]
   profiles:
     active: local
+
+# JWT 설정 (HS256). 운영에서는 반드시 JWT_SECRET 환경변수로 주입.
+jwt:
+  secret: ${JWT_SECRET:onring-local-dev-secret-key-please-change-0123456789}
+  access-token-validity-seconds: 3600   # 1시간
+
+# Supabase (구글 소셜 로그인 토큰 검증). anon(publishable) key 사용.
+supabase:
+  url: ${SUPABASE_URL:}
+  anon-key: ${SUPABASE_ANON_KEY:}
+
+# Gemini (회의 종료 후 AI 요약/액션아이템 생성). 키 미설정 시 요약은 생략되고 회의 종료 흐름엔 영향 없음.
+gemini:
+  api-key: ${GEMINI_API_KEY:}
+  model: ${GEMINI_MODEL:gemini-2.5-flash-lite}
+  # 주 모델이 503(과부하)로 소진되면 폴백. 재시도는 재시도 가능한 오류에만 지수 백오프로 적용.
+  # 특정 버전 고정(gemini-2.5-flash)은 신규 사용자 제공 종료로 404 가 나 롤링 alias 를 쓴다.
+  fallback-model: ${GEMINI_FALLBACK_MODEL:gemini-flash-latest}
+  max-attempts: ${GEMINI_MAX_ATTEMPTS:3}
+  retry-backoff-ms: ${GEMINI_RETRY_BACKOFF_MS:2000}

@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+    <title>회의 진행</title>
+    <!-- 자체 호스팅(같은 서버). CDN 의존 제거 — 느린/오프라인 회선에서도 로드 안정화. -->
+    <script src="/vendor/sockjs.min.js"></script>
+    <script src="/vendor/stomp.umd.min.js"></script>
+    <style>
+        /* 앱 라이트 테마(constants/theme.ts Colors.light + meeting-header NAVY)와 동일한 토큰 */
+        :root {
+            --text: #1A2B4E; --bg: #F4F6FA; --card: #ffffff; --selected: #EAF0FA;
+            --muted: #6B7A96; --primary: #1A3461; --accent: #2D67C8; --error: #D93B3B;
+            --border: rgba(26, 52, 97, 0.1);
+            --navy: #16305C; --chip-bg: rgba(255, 255, 255, 0.12);
+        }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html, body { height: 100%; margin: 0; }
+        body {
+            display: flex; flex-direction: column; background: var(--bg); color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+            overscroll-behavior: none;
+        }
+        button { font-family: inherit; }
+        .icon { width: 16px; height: 16px; flex: none; }
+
+        /* ── 헤더 (meeting-header.tsx 와 동일: 네이비 + 하단 라운드) ── */
+        .header {
+            background: var(--navy);
+            padding: calc(env(safe-area-inset-top) + 8px) 24px 16px;
+            border-bottom-left-radius: 24px; border-bottom-right-radius: 24px;
+            display: flex; flex-direction: column; gap: 16px; flex: none;
+        }
+        .top-row { display: flex; align-items: center; gap: 8px; }
+        .title-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+        .status { font-size: 13px; font-weight: 500; color: rgba(255,255,255,.6); }
+        .title { font-size: 22px; font-weight: 700; color: #fff; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .timer-pill {
+            display: flex; align-items: center; gap: 4px; background: var(--chip-bg);
+            padding: 8px 16px; border-radius: 999px;
+        }
+        .rec-dot { width: 8px; height: 8px; border-radius: 4px; background: #E05656; }
+        .timer { font-size: 15px; font-weight: 600; color: #fff; font-variant-numeric: tabular-nums; }
+        .end-btn {
+            border: 0; background: var(--error); color: #fff;
+            font-size: 15px; font-weight: 700; padding: 8px 16px; border-radius: 999px;
+        }
+        .leave-btn {
+            border: 0; background: var(--chip-bg); color: #fff;
+            font-size: 15px; font-weight: 700; padding: 8px 16px; border-radius: 999px;
+        }
+        .code-row {
+            display: inline-flex; align-items: center; align-self: flex-start; gap: 8px;
+            background: var(--chip-bg); border: 0; padding: 4px 16px; border-radius: 999px; color: #fff;
+        }
+        .code-label { font-size: 12px; font-weight: 600; color: rgba(255,255,255,.55); }
+        .code-text { font-size: 13px; font-weight: 700; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .code-row .icon { width: 13px; height: 13px; color: rgba(255,255,255,.8); }
+        .speaker-row { display: flex; flex-wrap: wrap; gap: 8px; }
+        .chip {
+            display: flex; align-items: center; gap: 8px; background: var(--chip-bg);
+            padding: 4px 16px 4px 8px; border-radius: 999px;
+        }
+        .chip-avatar {
+            width: 24px; height: 24px; border-radius: 12px; flex: none;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 11px; font-weight: 700; color: #fff;
+        }
+        .chip-name { font-size: 13px; font-weight: 600; color: #fff; max-width: 90px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        /* ── 언어 바 (language-bar.tsx) ── */
+        .langbar {
+            display: flex; align-items: center; gap: 8px; padding: 16px 24px;
+            border-bottom: 1px solid var(--border); background: var(--bg); flex: none;
+        }
+        .langbar > .icon { color: var(--muted); }
+        .langbar-label { font-size: 13px; color: var(--muted); }
+        .flags { display: flex; align-items: center; gap: 4px; }
+        .flag {
+            width: 34px; height: 30px; border-radius: 8px; border: 0; background: var(--selected);
+            display: flex; align-items: center; justify-content: center; font-size: 16px; padding: 0;
+        }
+        .flag.active { background: var(--primary); }
+        .divider { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+        .read-btn {
+            margin-left: auto; display: flex; align-items: center; gap: 4px;
+            border: 0; background: var(--primary); color: #fff;
+            padding: 8px 16px; border-radius: 999px; font-size: 13px; font-weight: 600;
+        }
+        .read-btn .icon { width: 14px; height: 14px; }
+
+        /* ── 자막 스트림 (caption-stream.tsx) ── */
+        .stream {
+            flex: 1; overflow-y: auto; padding: 24px 24px;
+            display: flex; flex-direction: column; gap: 24px; -webkit-overflow-scrolling: touch;
+        }
+        .item { display: flex; flex-direction: column; gap: 8px; }
+        .row-top { display: flex; align-items: center; gap: 8px; }
+        .avatar {
+            width: 28px; height: 28px; border-radius: 14px; flex: none; background: var(--accent);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px; font-weight: 700; color: #fff;
+        }
+        .name { flex: 1; min-width: 0; font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .time { font-size: 13px; color: var(--muted); }
+        .text { font-size: 18px; line-height: 26px; font-weight: 500; word-break: break-word; }
+        .empty { padding: 64px 0; text-align: center; color: var(--muted); font-size: 13px; margin: 0 auto; }
+
+        /* ── 입력 바 (chat-input-bar.tsx) ── */
+        .footer {
+            flex: none; background: var(--bg); border-top: 1px solid var(--border);
+            padding: 16px 24px calc(16px + env(safe-area-inset-bottom));
+            display: flex; flex-direction: column; gap: 16px;
+        }
+        .toggle-row { display: flex; gap: 8px; }
+        .toggle {
+            flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
+            border: 0; padding: 16px 0; border-radius: 16px;
+            font-size: 15px; font-weight: 700; background: var(--selected); color: var(--text);
+        }
+        .toggle.on-primary { background: var(--primary); color: #fff; }
+        .toggle.off { background: var(--card); color: var(--muted); }
+        .input-row {
+            display: flex; align-items: center; gap: 8px; background: var(--card);
+            border: 1px solid var(--border); border-radius: 999px;
+            padding: 4px 4px 4px 16px;
+        }
+        .input-row > .icon { color: var(--muted); }
+        .input {
+            flex: 1; min-width: 0; border: 0; background: transparent; font-size: 15px;
+            padding: 8px 0; font-family: inherit; color: var(--text);
+        }
+        .input::placeholder { color: var(--muted); }
+        .input:focus { outline: none; }
+        .send {
+            width: 40px; height: 40px; border-radius: 20px; border: 0; flex: none;
+            display: flex; align-items: center; justify-content: center;
+            background: var(--selected); color: var(--muted);
+        }
+        .send.ready { background: var(--primary); color: #fff; }
+    </style>
+</head>
+<body>
+
+<!-- Feather 아이콘 (앱 @expo/vector-icons Feather 와 동일 아이콘) -->
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="i-mic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+    </symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+    </symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+    </symbol>
+    <symbol id="i-type" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/>
+    </symbol>
+    <symbol id="i-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+    </symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+    </symbol>
+</svg>
+
+<div class="header">
+    <div class="top-row">
+        <div class="title-wrap">
+            <span class="status">진행 중</span>
+            <h1 class="title">회의 진행</h1>
+        </div>
+        <div class="timer-pill">
+            <span class="rec-dot"></span>
+            <span id="elapsed" class="timer">00:00</span>
+        </div>
+        <button id="end" class="end-btn" style="display:none">종료</button>
+        <button id="leave" class="leave-btn" style="display:none">나가기</button>
+    </div>
+    <button id="coderow" class="code-row" style="display:none" aria-label="회의 코드 복사">
+        <span class="code-label">코드</span>
+        <span id="code" class="code-text"></span>
+        <svg class="icon"><use href="#i-copy"/></svg>
+    </button>
+    <div id="participants" class="speaker-row"></div>
+</div>
+
+<div class="langbar">
+    <svg class="icon"><use href="#i-globe"/></svg>
+    <span class="langbar-label">내 언어:</span>
+    <div class="flags" id="flags"></div>
+    <span class="divider"></span>
+    <button id="read" class="read-btn" aria-label="자막 읽어주기">
+        <svg class="icon"><use href="#i-volume"/></svg>읽어주기
+    </button>
+</div>
+
+<div id="stream" class="stream">
+    <div class="empty" id="empty">아직 대화가 없습니다. 말하거나 입력하면 여기에 표시됩니다.</div>
+</div>
+
+<div class="footer">
+    <div class="toggle-row">
+        <button id="mic" class="toggle off" aria-label="마이크">
+            <svg class="icon"><use href="#i-mic"/></svg><span id="micLabel">마이크 OFF</span>
+        </button>
+        <button id="voice" class="toggle" aria-label="음성 출력">
+            <svg class="icon"><use href="#i-volume"/></svg><span id="voiceLabel">음성 ON</span>
+        </button>
+    </div>
+    <div class="input-row">
+        <svg class="icon"><use href="#i-type"/></svg>
+        <input id="input" class="input" placeholder="TTS로 말하기..." enterkeyhint="send">
+        <button id="send" class="send" disabled aria-label="전송">
+            <svg class="icon"><use href="#i-send"/></svg>
+        </button>
+    </div>
+</div>
+
+<script>
+'use strict';
+
+/* ── 라이브러리 로드 확인 ─────────────────────────────────────────
+   느린/끊긴 회선에서 sockjs·stompjs 가 안 받아지면 조용히 죽는 대신 안내 + 재시도. */
+if (typeof SockJS === 'undefined' || typeof StompJs === 'undefined') {
+    document.body.innerHTML =
+        '<div style="display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;'
+      + 'height:100%;padding:24px;text-align:center;font-family:-apple-system,sans-serif;color:#1A2B4E">'
+      + '<div style="font-size:15px;font-weight:600">연결 구성요소를 불러오지 못했어요</div>'
+      + '<div style="font-size:13px;color:#6B7A96">네트워크가 느리거나 불안정할 수 있어요. 다시 시도해 주세요.</div>'
+      + '<button onclick="location.reload()" style="border:0;background:#1A3461;color:#fff;'
+      + 'font-size:14px;font-weight:600;padding:10px 20px;border-radius:10px">다시 시도</button></div>';
+    throw new Error('vendor scripts not loaded');
+}
+
+/* ── URL 파라미터 (RN WebView 가 주입) ────────────────────────────
+   meetingId, code, name, userId, host(0|1), token, lang(ko|en|ja|zh) */
+const Q = new URLSearchParams(location.search);
+const MEETING_ID = Q.get('meetingId');
+const CODE       = Q.get('code') || '';
+const MY_NAME    = Q.get('name') || '나';
+const MY_ID      = Number(Q.get('userId') || 0);
+const IS_HOST    = Q.get('host') === '1';
+const TOKEN      = Q.get('token') || '';
+let   myLang     = (Q.get('lang') || 'ko').toLowerCase();
+/* 앱으로 돌아갈 딥링크(knouapp://meeting-done). 인라인 WebView 는 onShouldStartLoadWithRequest 로 가로챈다. */
+const RETURN_URL = Q.get('returnUrl') || '';
+
+/* ── RN WebView 브리지 ────────────────────────────────────────────
+   Android WebView 는 Web Speech API(SpeechRecognition·speechSynthesis)가 없거나 불안정하다.
+   브리지가 있으면 STT 는 expo-speech-recognition, TTS 는 expo-speech 로 네이티브에 위임한다.
+   Alert 는 네이티브 AppAlert(앱 공통 카드 UI) 로 위임한다.
+   (일반 브라우저 단독 실행 시엔 Web Speech / window.alert·confirm 폴백) */
+const RN = window.ReactNativeWebView || null;
+const post = (msg) => { try { RN.postMessage(JSON.stringify(msg)); } catch (e) { /* ignore */ } };
+
+/* ── 공통 Alert 브리지 (네이티브 AppAlert) ───────────────────────
+   appAlert({ title, message, buttons, cancelable, icon, iconTone }) → Promise<buttonKey>
+   브라우저 단독 실행 시 window.alert / confirm 폴백. */
+window.__alertPending = window.__alertPending || {};
+window.__alertResult = function (requestId, key) {
+    const r = window.__alertPending[requestId];
+    if (!r) return;
+    delete window.__alertPending[requestId];
+    r(key);
+};
+function appAlert(opts) {
+    opts = opts || {};
+    const buttons = (opts.buttons && opts.buttons.length)
+        ? opts.buttons
+        : [{ key: 'ok', text: '확인', style: 'primary' }];
+    return new Promise(function (resolve) {
+        if (!RN) {
+            // 브라우저 폴백
+            const title = opts.title || '';
+            const message = opts.message || '';
+            const text = message ? (title + '\n' + message) : title;
+            if (buttons.length <= 1) {
+                window.alert(text);
+                resolve(buttons[0].key || 'ok');
+                return;
+            }
+            const ok = window.confirm(text);
+            if (!ok) {
+                const cancel = buttons.find(function (b) { return b.style === 'cancel'; });
+                resolve(cancel ? (cancel.key || 'cancel') : null);
+                return;
+            }
+            const action = buttons.find(function (b) {
+                return b.style === 'primary' || b.style === 'destructive' || b.style === 'default';
+            }) || buttons[buttons.length - 1];
+            resolve(action.key || action.text || 'ok');
+            return;
+        }
+        const requestId = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        window.__alertPending[requestId] = resolve;
+        post({
+            type: 'alert',
+            requestId: requestId,
+            title: opts.title || '',
+            message: opts.message || '',
+            cancelable: opts.cancelable !== false,
+            icon: opts.icon || null,
+            iconTone: opts.iconTone || null,
+            buttons: buttons.map(function (b) {
+                return {
+                    key: b.key || b.text || 'ok',
+                    text: b.text || '확인',
+                    style: b.style || 'default',
+                };
+            }),
+        });
+    });
+}
+function appConfirm(title, message, opts) {
+    opts = opts || {};
+    return appAlert({
+        title: title,
+        message: message,
+        cancelable: true,
+        buttons: [
+            { key: 'cancel', text: opts.cancelText || '취소', style: 'cancel' },
+            {
+                key: 'confirm',
+                text: opts.confirmText || '확인',
+                style: opts.destructive ? 'destructive' : 'primary',
+            },
+        ],
+    }).then(function (key) { return key === 'confirm'; });
+}
+
+/* app 의 LangCode ↔ 백엔드 enum ↔ TTS locale ↔ 국기 (constants/languages.ts 와 동일) */
+const LANGS = [
+    { code: 'ko', backend: 'KO', flag: '🇰🇷', label: '한국어',  tts: 'ko-KR' },
+    { code: 'en', backend: 'EN', flag: '🇺🇸', label: 'English', tts: 'en-US' },
+    { code: 'ja', backend: 'JA', flag: '🇯🇵', label: '日本語',  tts: 'ja-JP' },
+    { code: 'zh', backend: 'ZH', flag: '🇨🇳', label: '中文',    tts: 'zh-CN' },
+];
+/* 참여자 칩 아바타 색 (meeting-header.tsx AVATAR_COLORS 와 동일) */
+const AVATAR_COLORS = ['#1A3461', '#2D67C8', '#3E5C8A', '#4A7BC4', '#5B8FD9'];
+const toBackend = (c) => (LANGS.find((l) => l.code === c) || LANGS[0]).backend;
+const ttsLocale = (backend) => {
+    const l = LANGS.find((x) => x.backend === backend);
+    return l ? l.tts : 'ko-KR';
+};
+
+/* ── DOM ──────────────────────────────────────────────────────── */
+const $ = (id) => document.getElementById(id);
+const streamEl = $('stream'), emptyEl = $('empty'), inputEl = $('input'), sendBtn = $('send');
+const endBtn = $('end'), leaveBtn = $('leave'), partEl = $('participants'), flagsEl = $('flags'), elapsedEl = $('elapsed');
+const micBtn = $('mic'), micLabel = $('micLabel'), voiceBtn = $('voice'), voiceLabel = $('voiceLabel'), readBtn = $('read');
+if (CODE) {
+    $('coderow').style.display = '';
+    $('code').textContent = CODE;
+}
+
+/* 앱 복귀 브리지 — 딥링크로 리다이렉트하면 앱 WebView 가 이를 가로채 처리(요약/나가기).
+   RETURN_URL 이 없으면(일반 브라우저 단독 실행) no-op. */
+function returnToApp(type, remote) {
+    if (!RETURN_URL) return;
+    const sep = RETURN_URL.indexOf('?') === -1 ? '?' : '&';
+    location.href = RETURN_URL + sep + 'type=' + encodeURIComponent(type) + (remote ? '&remote=1' : '');
+}
+
+/* ── 회의 코드 복사 ───────────────────────────────────────────── */
+$('coderow').onclick = () => {
+    const done = () => {
+        void appAlert({
+            title: '복사됨',
+            message: '회의 코드가 복사되었습니다.\n' + CODE,
+            icon: 'copy-outline',
+            iconTone: 'primary',
+            buttons: [{ key: 'ok', text: '확인', style: 'primary' }],
+        });
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(CODE).then(done).catch(() => legacyCopy());
+    } else legacyCopy();
+    function legacyCopy() {
+        const ta = document.createElement('textarea');
+        ta.value = CODE;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); done(); } catch (e) { /* ignore */ }
+        ta.remove();
+    }
+};
+
+/* ── 경과 시간 ────────────────────────────────────────────────── */
+const startedAt = Date.now();
+setInterval(() => {
+    const s = Math.floor((Date.now() - startedAt) / 1000);
+    const mm = String(Math.floor(s / 60)).padStart(2, '0');
+    const ss = String(s % 60).padStart(2, '0');
+    elapsedEl.textContent = mm + ':' + ss;
+}, 1000);
+
+/* ── 언어 바 (국기 버튼 — 선택 언어가 전송 lang 의 단일 소스) ── */
+function renderFlags() {
+    flagsEl.innerHTML = '';
+    for (const l of LANGS) {
+        const b = document.createElement('button');
+        b.className = 'flag' + (l.code === myLang ? ' active' : '');
+        b.textContent = l.flag;
+        b.setAttribute('aria-label', l.label + '로 번역');
+        b.onclick = () => {
+            myLang = l.code;
+            renderFlags();
+            // 인식 중이면 새 언어로 STT 세션 재시작
+            if (micOn) { stopStt(); startStt(); }
+        };
+        flagsEl.appendChild(b);
+    }
+}
+renderFlags();
+
+/* ── 참여자 칩 (아바타 + 이름) ────────────────────────────────── */
+function renderParticipants(list) {
+    // presence 가 오기 전에도 본인은 항상 보이도록
+    const names = list.includes(MY_NAME) ? list : [MY_NAME, ...list];
+    partEl.innerHTML = '';
+    names.forEach((n, i) => {
+        const chip = document.createElement('span');
+        chip.className = 'chip';
+        const av = document.createElement('span');
+        av.className = 'chip-avatar';
+        av.style.background = AVATAR_COLORS[i % AVATAR_COLORS.length];
+        av.textContent = n.charAt(0);
+        const nm = document.createElement('span');
+        nm.className = 'chip-name';
+        nm.textContent = n;
+        chip.appendChild(av);
+        chip.appendChild(nm);
+        partEl.appendChild(chip);
+    });
+}
+renderParticipants([]);
+
+/* ── 자막 렌더 (caption-stream.tsx 레이아웃, id 로 중복 제거) ── */
+const seen = new Set();
+let lastCaption = null; // 읽어주기 대상 (마지막 자막)
+function parseSentAt(sentAt) {
+    if (!sentAt) return Date.now();
+    const iso = /(Z|[+-]\d{2}:?\d{2})$/.test(sentAt) ? sentAt : sentAt + 'Z';
+    const t = Date.parse(iso);
+    return Number.isNaN(t) ? Date.now() : t;
+}
+function addCaption(c) {
+    // c: { senderId, senderName, message, sentAt, lang? }
+    const id = c.senderName + '-' + c.sentAt;
+    if (seen.has(id)) return;
+    seen.add(id);
+    emptyEl.style.display = 'none';
+    lastCaption = c;
+
+    const item = document.createElement('div');
+    item.className = 'item';
+
+    const top = document.createElement('div');
+    top.className = 'row-top';
+    const av = document.createElement('span');
+    av.className = 'avatar';
+    av.textContent = c.senderName.charAt(0);
+    const nm = document.createElement('span');
+    nm.className = 'name';
+    nm.textContent = c.senderName;
+    const tm = document.createElement('span');
+    tm.className = 'time';
+    const d = new Date(parseSentAt(c.sentAt));
+    tm.textContent = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    top.appendChild(av);
+    top.appendChild(nm);
+    top.appendChild(tm);
+    item.appendChild(top);
+
+    const text = document.createElement('div');
+    text.className = 'text';
+    text.textContent = c.message;
+    item.appendChild(text);
+
+    streamEl.appendChild(item);
+    streamEl.scrollTop = streamEl.scrollHeight;
+}
+
+/* ── TTS ──────────────────────────────────────────────────────── */
+let voiceOn = true; // 음성 토글 — 수신 CHAT 자동 읽기 on/off
+function speak(text, backendLang) {
+    if (RN) { post({ type: 'tts', text: text, lang: backendLang || null }); return; }
+    try {
+        if (!window.speechSynthesis) return;
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = ttsLocale(backendLang);
+        window.speechSynthesis.speak(u);
+    } catch (e) { /* ignore */ }
+}
+function stopSpeak() {
+    if (RN) { post({ type: 'tts-stop' }); return; }
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+}
+voiceBtn.onclick = () => {
+    voiceOn = !voiceOn;
+    voiceLabel.textContent = '음성 ' + (voiceOn ? 'ON' : 'OFF');
+    voiceBtn.className = 'toggle' + (voiceOn ? '' : ' off');
+    if (!voiceOn) stopSpeak();
+};
+readBtn.onclick = () => {
+    if (lastCaption) speak(lastCaption.message, lastCaption.lang || toBackend(myLang));
+};
+
+/* ── 마이크 (WebRTC 송신 트랙 + STT) ─────────────────────────────
+   설계: 마이크 토글 = 음성통화 송신 on/off + 내 발화 자막(STT).
+   - WebRTC: 트랙 enable 토글 (연결 유지)
+   - STT: 앱(RN 브리지) → 네이티브 expo-speech-recognition
+         일반 브라우저 → Web Speech API
+   수신 WebRTC 오디오는 마이크와 무관하게 항상 재생. */
+let micOn = true; // 입장 시 송신 ON (네이티브 MeshVoiceCall 과 동일)
+let recognizer = null;
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+function setMicUi() {
+    micLabel.textContent = '마이크 ' + (micOn ? 'ON' : 'OFF');
+    micBtn.className = 'toggle' + (micOn ? ' on-primary' : ' off');
+}
+/* 네이티브 STT 확정 문장 수신 (RN 이 injectJavaScript 로 호출) */
+window.__sttFinal = (text) => {
+    // source: STT — 수신 측 TTS 재생 제외 (WebRTC 음성으로 이미 들림)
+    if (micOn && text) publish(text, 'STT');
+};
+/* 네이티브 마이크·음성인식 권한 거부 (RN 이 호출) */
+window.__sttDenied = () => {
+    // STT 만 실패 — WebRTC 송신은 유지(별도 getUserMedia). UI 는 끄지 않는다.
+    console.warn('[stt] 음성 인식 권한 거부');
+};
+function startStt() {
+    if (RN) { post({ type: 'stt-start', lang: myLang }); return; }
+    if (!SR) return;
+    stopStt(); // 재시작 시 이전 세션 정리
+    recognizer = new SR();
+    recognizer.lang = ttsLocale(toBackend(myLang));
+    recognizer.continuous = true;
+    recognizer.interimResults = false;
+    recognizer.onresult = (ev) => {
+        for (let i = ev.resultIndex; i < ev.results.length; i++) {
+            if (!ev.results[i].isFinal) continue;
+            const text = ev.results[i][0].transcript.trim();
+            // source: STT — 수신 측 TTS 재생 제외 (WebRTC 음성으로 이미 들림)
+            if (text) publish(text, 'STT');
+        }
+    };
+    recognizer.onend = () => { if (micOn) { try { recognizer.start(); } catch (e) {} } }; // 자동 재시작
+    recognizer.onerror = () => {};
+    try { recognizer.start(); } catch (e) {}
+}
+function stopStt() {
+    if (RN) { post({ type: 'stt-stop' }); return; }
+    if (!recognizer) return;
+    const r = recognizer;
+    recognizer = null;
+    try { r.onend = null; r.stop(); } catch (e) {}
+}
+micBtn.onclick = () => {
+    micOn = !micOn;
+    setMicUi();
+    // WebRTC 송신 뮤트/언뮤트 (연결은 유지)
+    if (mesh) mesh.setMicEnabled(micOn);
+    // 자막용 STT 함께 토글
+    if (micOn) {
+        if (!RN && !SR) {
+            // STT 만 불가 — 음성통화(WebRTC) 는 계속 가능
+            console.warn('[stt] 이 기기는 음성 인식을 지원하지 않음');
+        } else {
+            startStt();
+        }
+    } else {
+        stopStt();
+    }
+};
+setMicUi();
+
+/* ── REST (놓친 메시지 복구 / 종료) ───────────────────────────── */
+function authHeaders() {
+    const h = {};
+    if (MY_ID) h['X-User-Id'] = String(MY_ID);
+    if (TOKEN) h['Authorization'] = 'Bearer ' + TOKEN;
+    return h;
+}
+let lastSentAt = null;
+function recoverMissed() {
+    const q = lastSentAt ? '?after=' + encodeURIComponent(lastSentAt) : '';
+    fetch('/api/meetings/' + MEETING_ID + '/messages' + q, { headers: authHeaders() })
+        .then((r) => (r.ok ? r.json() : []))
+        .then((list) => {
+            for (const m of list) {
+                lastSentAt = m.spokenAt;
+                addCaption({ senderId: m.userId, senderName: m.speakerName, message: m.original, sentAt: m.spokenAt });
+            }
+        })
+        .catch(() => {});
+}
+
+/* ── WebRTC Mesh 음성통화 ────────────────────────────────────────
+   네이티브 mesh-voice-call.ts 와 동일 계약 (STOMP /signal).
+   서버는 단순 릴레이, offer/answer/ICE 는 브라우저가 처리.
+   개선: 시그널 직렬 처리 + ICE candidate 큐 (도착 순서 레이스 방지). */
+const ICE_SERVERS = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    {
+        urls: [
+            'turn:openrelay.metered.ca:80',
+            'turn:openrelay.metered.ca:443',
+            'turn:openrelay.metered.ca:443?transport=tcp',
+        ],
+        username: 'openrelayproject',
+        credential: 'openrelayproject',
+    },
+];
+/** 세션 고유 peerId (재연결해도 같은 탭이면 유지 — 새 입장으로 취급하려면 새로고침) */
+const PEER_ID = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+
+function MeshVoiceCall(peerId, sendSignal) {
+    this.peerId = peerId;
+    this.sendSignal = sendSignal;
+    this.localStream = null;
+    /** @type {Map<string, { pc: RTCPeerConnection, pending: any[], audio: HTMLAudioElement|null }>} */
+    this.peers = new Map();
+    /** start() 전 도착 시그널 버퍼 */
+    this.preStart = [];
+    this.started = false;
+    /** handleSignal 직렬화 (offer/answer/candidate 경합 방지) */
+    this.chain = Promise.resolve();
+}
+
+MeshVoiceCall.prototype.start = async function () {
+    if (this.started) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('getUserMedia 미지원 (HTTPS 필요)');
+    }
+    this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    this.setMicEnabled(micOn);
+    this.started = true;
+    // start 전에 쌓인 시그널 처리 후 join 공지
+    const buffered = this.preStart.splice(0);
+    this.sendSignal({ type: 'join', from: this.peerId, to: null });
+    for (const m of buffered) this.handleSignal(m);
+};
+
+MeshVoiceCall.prototype.handleSignal = function (msg) {
+    this.chain = this.chain
+        .then(() => this._handleOne(msg))
+        .catch((e) => console.warn('[voice] signal 처리 실패', msg && msg.type, e));
+};
+
+MeshVoiceCall.prototype._handleOne = async function (msg) {
+    if (!msg || msg.from === this.peerId) return;
+    if (msg.to && msg.to !== this.peerId) return;
+    if (!this.started) {
+        // leave 는 버퍼에 넣을 필요 없음
+        if (msg.type !== 'leave') this.preStart.push(msg);
+        return;
+    }
+
+    switch (msg.type) {
+        case 'join': {
+            // 브로드캐스트면 나를 알리려 회신 (1:1 회신은 루프 방지로 재회신 안 함)
+            if (!msg.to) this.sendSignal({ type: 'join', from: this.peerId, to: msg.from });
+            // peerId 큰 쪽만 offer (glare 방지)
+            if (this.peerId > msg.from) {
+                // 상대 재입장/재연결 시 죽은 피어는 걷어내고 다시 offer
+                const existing = this.peers.get(msg.from);
+                if (existing) {
+                    const st = existing.pc.connectionState;
+                    if (st === 'failed' || st === 'disconnected' || st === 'closed') {
+                        this._closePeer(msg.from);
+                    }
+                }
+                await this._makeOffer(msg.from);
+            }
+            break;
+        }
+        case 'offer': {
+            // glare: 양측이 동시에 offer 한 경우 — peerId 큰 쪽 offer 유지, 작은 쪽은 양보
+            const existing = this.peers.get(msg.from);
+            if (existing && existing.pc.signalingState === 'have-local-offer') {
+                if (this.peerId > msg.from) return;
+                this._closePeer(msg.from);
+            }
+            const peer = this._ensurePeer(msg.from);
+            const desc = JSON.parse(msg.payload);
+            await peer.pc.setRemoteDescription(desc);
+            await this._flushPending(msg.from);
+            const answer = await peer.pc.createAnswer();
+            await peer.pc.setLocalDescription(answer);
+            this.sendSignal({
+                type: 'answer',
+                from: this.peerId,
+                to: msg.from,
+                payload: JSON.stringify({ type: answer.type, sdp: answer.sdp }),
+            });
+            break;
+        }
+        case 'answer': {
+            const peer = this.peers.get(msg.from);
+            if (!peer || !msg.payload) return;
+            // offer 대기 중이 아니면(중복·늦은 answer) 무시 — iceRestart 재협상은 have-local-offer 로 다시 들어옴
+            if (peer.pc.signalingState !== 'have-local-offer') return;
+            await peer.pc.setRemoteDescription(JSON.parse(msg.payload));
+            await this._flushPending(msg.from);
+            break;
+        }
+        case 'candidate': {
+            if (!msg.payload) return;
+            const cand = JSON.parse(msg.payload);
+            const peer = this.peers.get(msg.from);
+            if (!peer) {
+                // offer 전 candidate — 피어 생성 후 flush 되도록 임시 보관
+                const early = this._ensurePeer(msg.from);
+                early.pending.push(cand);
+                return;
+            }
+            if (!peer.pc.remoteDescription) {
+                peer.pending.push(cand);
+            } else {
+                try { await peer.pc.addIceCandidate(cand); } catch (e) {
+                    console.warn('[voice] addIceCandidate', e);
+                }
+            }
+            break;
+        }
+        case 'leave': {
+            this._closePeer(msg.from);
+            break;
+        }
+    }
+};
+
+MeshVoiceCall.prototype._makeOffer = async function (remoteId) {
+    let peer = this.peers.get(remoteId);
+    if (peer) {
+        // 이미 연결됐거나 협상 중이면 스킵
+        if (peer.pc.signalingState !== 'stable') return;
+        if (peer.pc.connectionState === 'connected' || peer.pc.connectionState === 'connecting') return;
+        // stable 이지만 연결 안 됨(실패 직후 등) → 새로 협상
+        if (peer.pc.currentRemoteDescription || peer.pc.currentLocalDescription) {
+            this._closePeer(remoteId);
+            peer = null;
+        }
+    }
+    peer = this._ensurePeer(remoteId);
+    const offer = await peer.pc.createOffer();
+    await peer.pc.setLocalDescription(offer);
+    this.sendSignal({
+        type: 'offer',
+        from: this.peerId,
+        to: remoteId,
+        payload: JSON.stringify({ type: offer.type, sdp: offer.sdp }),
+    });
+};
+
+MeshVoiceCall.prototype._ensurePeer = function (remoteId) {
+    let peer = this.peers.get(remoteId);
+    if (peer) return peer;
+
+    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    peer = { pc: pc, pending: [], audio: null };
+    this.peers.set(remoteId, peer);
+
+    // 로컬 마이크 송신
+    if (this.localStream) {
+        this.localStream.getTracks().forEach((t) => pc.addTrack(t, this.localStream));
+    }
+
+    pc.onicecandidate = (ev) => {
+        if (!ev.candidate) return;
+        this.sendSignal({
+            type: 'candidate',
+            from: this.peerId,
+            to: remoteId,
+            payload: JSON.stringify({
+                candidate: ev.candidate.candidate,
+                sdpMid: ev.candidate.sdpMid,
+                sdpMLineIndex: ev.candidate.sdpMLineIndex,
+            }),
+        });
+    };
+
+    pc.onconnectionstatechange = () => {
+        console.log('[voice] peer', remoteId, pc.connectionState);
+        if (pc.connectionState === 'failed') {
+            // 간단 복구: ICE restart 시도
+            try {
+                if (this.peerId > remoteId) {
+                    pc.createOffer({ iceRestart: true }).then(async (offer) => {
+                        await pc.setLocalDescription(offer);
+                        this.sendSignal({
+                            type: 'offer',
+                            from: this.peerId,
+                            to: remoteId,
+                            payload: JSON.stringify({ type: offer.type, sdp: offer.sdp }),
+                        });
+                    }).catch((e) => console.warn('[voice] iceRestart 실패', e));
+                }
+            } catch (e) { /* ignore */ }
+        }
+    };
+
+    // 수신 오디오 자동 재생 (WebView: mediaPlaybackRequiresUserAction=false 필요)
+    pc.ontrack = (ev) => {
+        const stream = (ev.streams && ev.streams[0])
+            ? ev.streams[0]
+            : new MediaStream([ev.track]);
+        let audio = peer.audio;
+        if (!audio) {
+            audio = document.createElement('audio');
+            audio.autoplay = true;
+            audio.setAttribute('playsinline', 'true');
+            audio.style.display = 'none';
+            document.body.appendChild(audio);
+            peer.audio = audio;
+        }
+        audio.srcObject = stream;
+        const play = () => audio.play().catch((e) => console.warn('[voice] audio.play', e));
+        play();
+        // 일부 WebView 는 첫 제스처 전 autoplay 차단 → 다음 탭/클릭 시 재시도
+        const unlock = () => { play(); document.removeEventListener('click', unlock, true); };
+        document.addEventListener('click', unlock, true);
+    };
+
+    return peer;
+};
+
+MeshVoiceCall.prototype._flushPending = async function (remoteId) {
+    const peer = this.peers.get(remoteId);
+    if (!peer || !peer.pc.remoteDescription) return;
+    const list = peer.pending.splice(0);
+    for (const c of list) {
+        try { await peer.pc.addIceCandidate(c); } catch (e) {
+            console.warn('[voice] flush candidate', e);
+        }
+    }
+};
+
+MeshVoiceCall.prototype.setMicEnabled = function (enabled) {
+    if (!this.localStream) return;
+    this.localStream.getAudioTracks().forEach((t) => { t.enabled = !!enabled; });
+};
+
+MeshVoiceCall.prototype._closePeer = function (remoteId) {
+    const peer = this.peers.get(remoteId);
+    if (!peer) return;
+    try { peer.pc.close(); } catch (e) { /* ignore */ }
+    if (peer.audio) {
+        try { peer.audio.pause(); peer.audio.srcObject = null; peer.audio.remove(); } catch (e) { /* ignore */ }
+    }
+    this.peers.delete(remoteId);
+};
+
+MeshVoiceCall.prototype.stop = function () {
+    try { this.sendSignal({ type: 'leave', from: this.peerId, to: null }); } catch (e) { /* ignore */ }
+    this.peers.forEach((_, id) => this._closePeer(id));
+    this.peers.clear();
+    if (this.localStream) {
+        this.localStream.getTracks().forEach((t) => t.stop());
+        this.localStream = null;
+    }
+    this.started = false;
+    this.preStart = [];
+};
+
+/** @type {MeshVoiceCall|null} */
+let mesh = null;
+/** getUserMedia 실패 alert 는 세션당 1회만 (STOMP 재연결 스팸 방지) */
+let voiceFailAlerted = false;
+/** startVoice 동시 호출 가드 (onConnect 중복 방지) */
+let voiceStarting = false;
+
+function sendSignal(msg) {
+    if (!connected || !client.connected) return;
+    client.publish({
+        destination: '/app/meetings/' + MEETING_ID + '/signal',
+        body: JSON.stringify(msg),
+    });
+}
+
+async function startVoice() {
+    if (voiceStarting) return;
+    voiceStarting = true;
+    // 재연결 시 이전 세션 정리 후 새로 join
+    if (mesh) {
+        try { mesh.stop(); } catch (e) { /* ignore */ }
+        mesh = null;
+    }
+    mesh = new MeshVoiceCall(PEER_ID, sendSignal);
+    try {
+        await mesh.start();
+        console.log('[voice] started peerId=' + PEER_ID);
+        // 입장 직후 마이크 ON 이면 STT 도 시작 (자막)
+        if (micOn) startStt();
+    } catch (e) {
+        console.warn('[voice] start 실패', e);
+        try { mesh.stop(); } catch (err) { /* ignore */ }
+        mesh = null;
+        // 음성통화만 실패 — 채팅/자막은 계속. 재연결마다 알림 띄우지 않음.
+        if (!voiceFailAlerted) {
+            voiceFailAlerted = true;
+            void appAlert({
+                title: '음성통화를 시작할 수 없어요',
+                message: '마이크 권한을 허용하거나 HTTPS 환경을 확인해 주세요. 채팅·자막은 계속 사용할 수 있어요.',
+                icon: 'mic-off-outline',
+                iconTone: 'error',
+                buttons: [{ key: 'ok', text: '확인', style: 'primary' }],
+            });
+        }
+    } finally {
+        voiceStarting = false;
+    }
+}
+
+function stopVoice() {
+    if (!mesh) return;
+    try { mesh.stop(); } catch (e) { /* ignore */ }
+    mesh = null;
+}
+
+/* ── STOMP ────────────────────────────────────────────────────── */
+const base = '/topic/meetings/' + MEETING_ID;
+let connected = false;
+
+const client = new StompJs.Client({
+    webSocketFactory: () => new SockJS('/ws'),
+    connectHeaders: TOKEN ? { Authorization: 'Bearer ' + TOKEN } : {},
+    reconnectDelay: 5000,
+    heartbeatIncoming: 20000,
+    heartbeatOutgoing: 20000,
+});
+
+client.onConnect = () => {
+    connected = true;
+    updateSendUi();
+
+    client.subscribe(base, (f) => {
+        const m = JSON.parse(f.body);
+        lastSentAt = m.sentAt;
+        addCaption(m);
+        // 타이핑 채팅(CHAT)만, 남의 것만, 음성 토글 ON 일 때만 TTS 로 읽어준다
+        // (STT 발화는 WebRTC 로 이미 들렸으므로 TTS 제외)
+        const mine = m.senderId === MY_ID && m.senderName === MY_NAME;
+        if (!mine && m.source !== 'STT' && voiceOn) speak(m.message, m.lang);
+    });
+    client.subscribe(base + '/participants', (f) => {
+        renderParticipants((JSON.parse(f.body).participants) || []);
+    });
+    client.subscribe(base + '/status', (f) => {
+        const ev = JSON.parse(f.body);
+        if (ev.type === 'ENDED') endedRemote();
+    });
+    // WebRTC Mesh 시그널링
+    client.subscribe(base + '/signal', (f) => {
+        try {
+            const m = JSON.parse(f.body);
+            if (mesh) mesh.handleSignal(m);
+            else {
+                // startVoice 레이스: mesh 생성 전이면 잠시 후 재시도 대신
+                // startVoice 가 mesh 를 만든 뒤 join 을 보내므로 보통 여기 안 옴.
+                // 재연결 직후 상대 leave/offer 가 오면 드롭될 수 있어 start 후 join 으로 재협상.
+                console.log('[voice] mesh 미기동 중 signal 무시', m.type);
+            }
+        } catch (e) {
+            console.warn('[voice] signal parse', e);
+        }
+    });
+
+    // 입장(presence)
+    client.publish({
+        destination: '/app/meetings/' + MEETING_ID + '/participants/join',
+        body: JSON.stringify({ senderName: MY_NAME }),
+    });
+
+    recoverMissed();
+
+    // 시그널 구독 후 음성통화 시작 (재연결 시에도 재join)
+    void startVoice();
+};
+client.onWebSocketClose = () => {
+    connected = false;
+    updateSendUi();
+    // 소켓이 끊기면 시그널링 불가 — 미디어 peer 는 잠시 유지 가능하지만
+    // 재연결 시 startVoice 가 정리 후 재join 하므로 여기서 즉시 stop 하지 않음.
+};
+client.onStompError = (f) => console.warn('[STOMP] ' + (f.headers && f.headers.message));
+client.activate();
+
+/* ── 전송 ─────────────────────────────────────────────────────── */
+function publish(text, source) {
+    if (!connected) return;
+    client.publish({
+        destination: '/app/meetings/' + MEETING_ID + '/send',
+        body: JSON.stringify({
+            senderId: MY_ID,
+            senderName: MY_NAME,
+            message: text,
+            lang: toBackend(myLang),
+            source: source,
+        }),
+    });
+}
+function updateSendUi() {
+    const ready = connected && inputEl.value.trim().length > 0;
+    sendBtn.disabled = !ready;
+    sendBtn.className = 'send' + (ready ? ' ready' : '');
+}
+function send() {
+    const text = inputEl.value.trim();
+    if (!text || !connected) return;
+    publish(text, 'CHAT'); // source: CHAT — 수신 측에서 TTS 로 읽어줌 (STT 발화와 구분)
+    inputEl.value = '';
+    updateSendUi();
+    inputEl.focus();
+}
+sendBtn.onclick = send;
+inputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); send(); }
+});
+inputEl.addEventListener('input', updateSendUi);
+
+/* ── 종료/나가기 ──────────────────────────────────────────────── */
+let closed = false;
+function cleanupMedia() {
+    try { stopStt(); } catch (e) { /* ignore */ }
+    try { stopSpeak(); } catch (e) { /* ignore */ }
+    try { stopVoice(); } catch (e) { /* ignore */ }
+}
+function endedRemote() {   // 개설자가 종료 → 참여자: 요약으로
+    if (closed) return;
+    closed = true;
+    cleanupMedia();
+    try { client.deactivate(); } catch (e) { /* ignore */ }
+    returnToApp('ended', true);
+}
+
+if (IS_HOST) {
+    // 개설자(attendance.iscreated='Y') → 회의 종료 버튼
+    endBtn.style.display = '';
+    endBtn.onclick = async () => {
+        const ok = await appConfirm(
+            '회의를 종료할까요?',
+            '종료하면 회의 요약과 전체 대화를 확인할 수 있어요.',
+            { confirmText: '종료', cancelText: '취소', destructive: true },
+        );
+        if (!ok) return;
+        if (closed) return;
+        closed = true;
+        endBtn.disabled = true;
+        cleanupMedia();
+        // 딥링크로 페이지를 떠나기 전에 종료 요청을 확실히 보낸다(리다이렉트가 in-flight fetch 를 끊지 않도록 await).
+        // 서버는 참여자 전원에게 ENDED 브로드캐스트한다. 실패해도 개설자는 요약으로 이동.
+        try {
+            await fetch('/api/meetings/' + MEETING_ID + '/end', { method: 'POST', headers: authHeaders(), keepalive: true });
+        } catch (e) { console.warn('[end] 종료 요청 실패', e); }
+        try { client.deactivate(); } catch (e) { /* ignore */ }
+        returnToApp('ended', false);
+    };
+} else {
+    // 참여자 → 나가기 버튼. 확인 UI(안 나가기/나가기)는 앱(네이티브 AppAlert)에서 처리.
+    // 앱이 딥링크를 가로채므로 페이지는 남음 — 안 나가기면 회의 계속, closed 를 세우지 않음.
+    leaveBtn.style.display = '';
+    leaveBtn.onclick = () => {
+        if (closed) return;
+        // leave 시그널·미디어 정리는 실제 퇴장(pagehide/언마운트) 때 처리.
+        // 안 나가기 선택 시 페이지가 살아 있으므로 여기서 stopVoice 하지 않음.
+        returnToApp('left', false);
+    };
+}
+
+/* RN 이 뒤로가기·화면 언마운트 등으로 정리할 때 대비 */
+window.addEventListener('pagehide', () => {
+    cleanupMedia();
+    try { client.deactivate(); } catch (e) { /* ignore */ }
+});
+window.addEventListener('beforeunload', () => {
+    cleanupMedia();
+});
+</script>
+</body>
+</html>

@@ -1,12 +1,21 @@
 spring:
   datasource:
-    url: jdbc:mysql://localhost:3306/knou_local?useSSL=false&serverTimezone=Asia/Seoul&characterEncoding=UTF-8
-    username: root
-    password: password
+    url: jdbc:mysql://127.0.0.1:13306/onRingDb?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul&characterEncoding=UTF-8&connectTimeout=10000&socketTimeout=30000
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      # 원격 13306 터널이 순간 끊겨도 잘 버티도록 한 재시도/검증 설정
+      connection-timeout: 10000          # 커넥션 획득 대기 10s (그 안에 재시도)
+      initialization-fail-timeout: 30000 # 풀 최초 연결 실패 시 30s 동안 재시도 후 포기
+      validation-timeout: 5000
+      keepalive-time: 30000              # 유휴 커넥션 주기적 ping → 끊긴 커넥션 조기 폐기
+      max-lifetime: 600000               # 오래된(터널 끊긴) 커넥션 재생성
+      maximum-pool-size: 5
+      minimum-idle: 1
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: update
     show-sql: true
     properties:
       hibernate:
