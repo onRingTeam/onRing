@@ -91,6 +91,7 @@ module.exports = {
           speechRecognitionPermission: '발화를 자막으로 변환하기 위해 음성 인식 권한이 필요합니다.',
         },
       ],
+      'expo-sharing',
     ],
     experiments: {
       typedRoutes: true,
