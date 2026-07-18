@@ -1,6 +1,6 @@
 // 1. Import
 import { useEffect, useState } from 'react';
-import { ScrollView, View, TouchableOpacity } from 'react-native';
+import { ActivityIndicator, ScrollView, View, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -8,7 +8,9 @@ import { Feather } from '@expo/vector-icons';
 import { ThemedText } from '@/components/themed-text';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { showAlert } from '@/components/ui/app-alert';
 import { formatDuration, formatMeetingDate } from '@/utils/meeting-format';
+import { exportMeetingPdf } from './export';
 import { useMeetingDetail, useMeetingTranscript } from './hooks';
 import { SummaryTab } from './components/summary-tab';
 import { TranscriptTab } from './components/transcript-tab';
@@ -35,6 +37,8 @@ export function NotesDetailScreen({ id, waitForSummary = false }: NotesDetailScr
 
   const meetingId = Number(id);
   const [tab, setTab] = useState<DetailTab>('summary');
+  // PDF 생성~공유 시트 표시 동안 true → 버튼 스피너 표시 + 중복 탭 방지.
+  const [exporting, setExporting] = useState(false);
   // 상세보기 진입 시 항상 'AI 요약' 탭부터. 다른 회의로 전환돼 라우트가 재사용돼도(이전 탭 잔존 방지)
   // id 가 바뀌면 요약 탭으로 리셋한다.
   useEffect(() => {
@@ -55,6 +59,19 @@ export function NotesDetailScreen({ id, waitForSummary = false }: NotesDetailScr
   // 요약이 아직 없고 폴링 중(방금 종료했거나, 예전 회의를 다시 열어 백엔드가 온디맨드 재생성 중)
   // → '생성 중' 표시. 폴링 상한 도달 시 자연히 해제된다.
   const summaryPending = isSummaryPending;
+
+  // 내보내기 — 상세 데이터를 PDF 로 만들어 OS 공유 시트로 전달.
+  const handleExport = async () => {
+    if (!detail || exporting) return;
+    setExporting(true);
+    try {
+      await exportMeetingPdf(detail);
+    } catch {
+      showAlert('내보내기 실패', '회의록 문서를 만들지 못했습니다. 다시 시도해주세요.');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // 3. 상단 통계 카드 데이터
   const stats = detail
@@ -90,6 +107,22 @@ export function NotesDetailScreen({ id, waitForSummary = false }: NotesDetailScr
               </ThemedText>
             )}
           </View>
+          {detail && (
+            <TouchableOpacity
+              onPress={handleExport}
+              disabled={exporting}
+              style={[styles.backBtn, { backgroundColor: colors.backgroundElement, borderColor: colors.border }]}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="회의록 내보내기"
+            >
+              {exporting ? (
+                <ActivityIndicator size="small" color={colors.accent} />
+              ) : (
+                <Feather name="share" size={16} color={colors.text} />
+              )}
+            </TouchableOpacity>
+          )}
         </View>
 
         {isLoading ? (
