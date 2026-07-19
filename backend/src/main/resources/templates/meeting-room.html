@@ -1019,6 +1019,16 @@ client.onConnect = () => {
 
     recoverMissed();
 
+    // 끊긴 사이 개설자가 종료해 STOMP 종료(status ENDED) 이벤트를 놓쳤을 수 있으니
+    // 회의 자체의 종료 여부(durationSec 채워짐)를 직접 재확인한다. 조회 실패 시엔 오탐 방지로 무시.
+    // (네이티브 hooks.ts 의 fetchMeetingEnded 재확인과 동일한 안전장치)
+    fetch('/api/meetings/' + MEETING_ID, { headers: authHeaders() })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((detail) => {
+            if (detail && detail.durationSec != null) endedRemote();
+        })
+        .catch(() => {});
+
     // 시그널 구독 후 음성통화 시작 (재연결 시에도 재join)
     void startVoice();
 };
