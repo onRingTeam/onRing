@@ -39,7 +39,9 @@ class SecurityConfig {
                 // 헬스체크 + 로그인(토큰 발급 창구)은 공개.
                 // 회의 웹뷰 페이지·SockJS 핸드셰이크(/ws)도 공개 — 페이지 안의 REST(종료/메시지)는
                 // 여전히 Bearer 토큰으로 인증한다. (STOMP CONNECT 인증은 StompAuthChannelInterceptor)
+                // /admin/logs 는 JWT 대신 전용 IP 화이트리스트([LogAccessFilterConfig])가 항상 지킨다.
                 it.requestMatchers("/health", "/auth/login", "/meeting-room", "/ws/**", "/vendor/**").permitAll()
+                    .requestMatchers("/admin/logs", "/admin/logs/**").permitAll()
                     .anyRequest().authenticated()
             }
             // 미인증 접근 시 401/302 대신 403 으로 차단
