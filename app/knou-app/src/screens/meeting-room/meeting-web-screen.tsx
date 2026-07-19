@@ -23,6 +23,7 @@ import type { BackendLang, LangCode } from '@/types/meeting';
 import { fromBackendLang } from '@/types/meeting';
 import { API_BASE } from '@/lib/config';
 import { LiveStt } from '@/lib/stt/live-stt';
+import { resolveSourceLang, translate } from '@/lib/translate';
 import { speakMessage, stopSpeaking } from '@/lib/tts';
 import { useProfile } from '@/screens/settings/hooks';
 import { leaveMeeting } from './api';
@@ -115,6 +116,7 @@ export function MeetingWebScreen() {
       text?: string;
       lang?: string;
       requestId?: string;
+      target?: string;
       title?: string;
       message?: string;
       cancelable?: boolean;
@@ -156,6 +158,25 @@ export function MeetingWebScreen() {
       case 'stt-stop':
         stopStt();
         break;
+      case 'translate': {
+        // 웹 페이지 수신 자막 번역 위임 — WebView 는 ML Kit 을 못 쓰므로 여기서 번역해
+        // window.__onTranslated(id, 결과|null) 로 돌려준다. 실패·같은 언어면 null.
+        const requestId = msg.requestId ?? '';
+        const text = msg.text ?? '';
+        if (!requestId || !text) break;
+        const target = (msg.target as LangCode) ?? 'ko';
+        const source = resolveSourceLang(text, msg.lang ? fromBackendLang(msg.lang as BackendLang) : undefined);
+        const finish = (translated: string | null) =>
+          webRef.current?.injectJavaScript(
+            `window.__onTranslated && window.__onTranslated(${JSON.stringify(requestId)}, ${JSON.stringify(translated)}); true;`,
+          );
+        if (source === target) {
+          finish(null);
+          break;
+        }
+        translate(text, target, source).then(finish, () => finish(null));
+        break;
+      }
       case 'alert': {
         // 웹 페이지 공통 AppAlert 브리지 (title/message/buttons → 네이티브 카드 UI)
         const requestId = msg.requestId ?? '';

@@ -105,6 +105,7 @@
         .name { flex: 1; min-width: 0; font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .time { font-size: 13px; color: var(--muted); }
         .text { font-size: 18px; line-height: 26px; font-weight: 500; word-break: break-word; }
+        .trans { margin-top: 4px; font-size: 15px; line-height: 22px; color: #4a6ba8; word-break: break-word; }
         .empty { padding: 64px 0; text-align: center; color: var(--muted); font-size: 13px; margin: 0 auto; }
 
         /* ── 입력 바 (chat-input-bar.tsx) ── */
@@ -448,8 +449,9 @@ function parseSentAt(sentAt) {
 }
 function addCaption(c) {
     // c: { senderId, senderName, message, sentAt, lang? }
+    // 반환: 새로 추가된 자막의 id (중복이면 null) — 번역 요청 연결용.
     const id = c.senderName + '-' + c.sentAt;
-    if (seen.has(id)) return;
+    if (seen.has(id)) return null;
     seen.add(id);
     emptyEl.style.display = 'none';
     lastCaption = c;
@@ -479,8 +481,43 @@ function addCaption(c) {
     text.textContent = c.message;
     item.appendChild(text);
 
+    // 번역 칸 (온디바이스 번역 결과 도착 시 채움 — caption-stream.tsx 의 번역 줄과 동일 역할)
+    const tr = document.createElement('div');
+    tr.className = 'trans';
+    tr.style.display = 'none';
+    item.appendChild(tr);
+    transEls.set(id, tr);
+
     streamEl.appendChild(item);
     streamEl.scrollTop = streamEl.scrollHeight;
+    return id;
+}
+
+/* ── 수신 자막 번역 (RN 브리지 → 온디바이스 ML Kit) ──────────────
+   웹뷰(WebView)는 ML Kit 을 직접 못 쓰므로 앱에 위임한다:
+   post({type:'translate'}) → 앱이 번역 → window.__onTranslated(id, 결과) 주입.
+   결과가 null 이면(같은 언어·번역 실패) 번역 칸은 비워두고 TTS 는 원문으로 폴백.
+   일반 브라우저(RN 없음)는 번역 없이 기존처럼 원문 TTS 만 한다. */
+const transEls = new Map();     // caption id → 번역 표시 div
+const transPending = new Map(); // caption id → { speak, text, lang } (결과 도착 시 TTS 판단용)
+window.__onTranslated = (id, translated) => {
+    const p = transPending.get(id);
+    transPending.delete(id);
+    const el = transEls.get(id);
+    if (translated && el) {
+        el.textContent = translated;
+        el.style.display = '';
+        streamEl.scrollTop = streamEl.scrollHeight;
+    }
+    if (p && p.speak) {
+        if (translated) speak(translated, toBackend(myLang));
+        else speak(p.text, p.lang);
+    }
+};
+function maybeTranslate(id, m, shouldSpeak) {
+    if (!RN) { if (shouldSpeak) speak(m.message, m.lang); return; }
+    transPending.set(id, { speak: shouldSpeak, text: m.message, lang: m.lang || null });
+    post({ type: 'translate', requestId: id, text: m.message, lang: m.lang || null, target: myLang });
 }
 
 /* ── TTS ──────────────────────────────────────────────────────── */
@@ -592,7 +629,9 @@ function recoverMissed() {
         .then((list) => {
             for (const m of list) {
                 lastSentAt = m.spokenAt;
-                addCaption({ senderId: m.userId, senderName: m.speakerName, message: m.original, sentAt: m.spokenAt });
+                const id = addCaption({ senderId: m.userId, senderName: m.speakerName, message: m.original, sentAt: m.spokenAt, lang: m.lang });
+                // 복구분도 번역은 붙이되 몰아서 읽어주진 않는다
+                if (id && m.userId !== MY_ID) maybeTranslate(id, { message: m.original, lang: m.lang }, false);
             }
         })
         .catch(() => {});
@@ -940,11 +979,14 @@ client.onConnect = () => {
     client.subscribe(base, (f) => {
         const m = JSON.parse(f.body);
         lastSentAt = m.sentAt;
-        addCaption(m);
+        const id = addCaption(m);
         // 타이핑 채팅(CHAT)만, 남의 것만, 음성 토글 ON 일 때만 TTS 로 읽어준다
         // (STT 발화는 WebRTC 로 이미 들렸으므로 TTS 제외)
         const mine = m.senderId === MY_ID && m.senderName === MY_NAME;
-        if (!mine && m.source !== 'STT' && voiceOn) speak(m.message, m.lang);
+        const shouldSpeak = !mine && m.source !== 'STT' && voiceOn;
+        // 남의 메시지는 번역을 요청하고, TTS 는 번역 결과 도착 후(번역문 우선) 처리한다
+        if (id && !mine) maybeTranslate(id, m, shouldSpeak);
+        else if (shouldSpeak) speak(m.message, m.lang);
     });
     client.subscribe(base + '/participants', (f) => {
         renderParticipants((JSON.parse(f.body).participants) || []);

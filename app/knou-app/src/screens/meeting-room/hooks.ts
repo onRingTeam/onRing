@@ -108,34 +108,42 @@ export function useMeetingConnection(
       },
     });
 
+    // 수신 메시지 공통 처리 — 자막 추가 + 필요 시 온디바이스 번역·TTS.
+    // 실시간(STOMP onMessage)과 재연결 복구(fetchMessages) 두 경로 모두 이걸 태워야
+    // 웹소켓이 끊겼다 붙는 환경(Cloudflare 유휴 종료 등)에서도 번역이 빠지지 않는다.
+    // allowSpeak=false: 복구분은 과거 메시지라 몰아서 읽어주지 않는다.
+    const handleIncoming = (msg: ChatMessageResponse, allowSpeak: boolean) => {
+      const caption = toCaption(msg);
+      addCaption(caption);
+
+      // 타이핑 채팅(CHAT)만 TTS 로 읽어준다 — STT 발화는 WebRTC 음성으로 이미 들렸고, 본인 메시지 제외
+      const shouldSpeak = allowSpeak && msg.source !== 'STT' && msg.senderName !== senderName;
+      // 외국어 메시지는 온디바이스 번역 후 자막의 번역칸을 채우고, TTS 도 번역문을 내 언어로 읽는다.
+      // 원문 언어는 내용(스크립트) 기반으로 판별 — msg.lang 은 발화자의 설정 언어라 실제
+      // 내용과 다를 수 있어(설정과 다른 언어로 입력), 태그는 ja/zh 구분에만 보조로 쓴다.
+      const sourceLang = resolveSourceLang(msg.message, msg.lang != null ? fromBackendLang(msg.lang) : undefined);
+
+      if (sourceLang !== myLanguage) {
+        void translate(msg.message, myLanguage, sourceLang).then((translated) => {
+          if (translated) {
+            setCaptionTranslation(caption.id, translated);
+            if (shouldSpeak) speakMessage(translated, toBackendLang(myLanguage));
+          } else if (shouldSpeak) {
+            speakMessage(msg.message, msg.lang); // 번역 실패 시 원문·원어로 폴백
+          }
+        });
+      } else if (shouldSpeak) {
+        speakMessage(msg.message, msg.lang);
+      }
+    };
+
     socket.connect(meetingId, {
       joinName: senderName,
       onMessage: (msg) => {
         lastSentAtRef.current = msg.sentAt;
         // 내 메시지는 전송 시 낙관적으로 이미 자막에 넣었으므로 에코는 건너뜀 (중복 방지)
         if (msg.senderId === senderId) return;
-        const caption = toCaption(msg);
-        addCaption(caption);
-
-        // 타이핑 채팅(CHAT)만 TTS 로 읽어준다 — STT 발화는 WebRTC 음성으로 이미 들렸고, 본인 메시지 제외
-        const shouldSpeak = msg.source !== 'STT' && msg.senderName !== senderName;
-        // 외국어 메시지는 온디바이스 번역 후 자막의 번역칸을 채우고, TTS 도 번역문을 내 언어로 읽는다.
-        // 원문 언어는 내용(스크립트) 기반으로 판별 — msg.lang 은 발화자의 설정 언어라 실제
-        // 내용과 다를 수 있어(설정과 다른 언어로 입력), 태그는 ja/zh 구분에만 보조로 쓴다.
-        const sourceLang = resolveSourceLang(msg.message, msg.lang != null ? fromBackendLang(msg.lang) : undefined);
-
-        if (sourceLang !== myLanguage) {
-          void translate(msg.message, myLanguage, sourceLang).then((translated) => {
-            if (translated) {
-              setCaptionTranslation(caption.id, translated);
-              if (shouldSpeak) speakMessage(translated, toBackendLang(myLanguage));
-            } else if (shouldSpeak) {
-              speakMessage(msg.message, msg.lang); // 번역 실패 시 원문·원어로 폴백
-            }
-          });
-        } else if (shouldSpeak) {
-          speakMessage(msg.message, msg.lang);
-        }
+        handleIncoming(msg, true);
       },
       onParticipants: (list) => setParticipants(list),
       onSignal: (msg) => void mesh.handleSignal(msg),
@@ -148,7 +156,9 @@ export function useMeetingConnection(
           .then((missed) => {
             for (const m of missed) {
               lastSentAtRef.current = m.spokenAt;
-              addCaption(toCaption({ senderId: m.userId, senderName: m.speakerName, message: m.original, lang: m.lang, sentAt: m.spokenAt }));
+              // 내 메시지는 발화 시 낙관적으로 이미 자막에 있음 → 건너뜀 (실시간 경로와 동일 규칙)
+              if (m.userId === senderId) continue;
+              handleIncoming({ senderId: m.userId, senderName: m.speakerName, message: m.original, lang: m.lang, sentAt: m.spokenAt }, false);
             }
           })
           .catch((e) => console.warn('[chat] 놓친 메시지 복구 실패', e));
