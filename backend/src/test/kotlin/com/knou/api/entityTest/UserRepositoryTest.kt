@@ -8,7 +8,6 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest
 import org.springframework.test.context.ActiveProfiles
-import org.springframework.test.context.TestPropertySource
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -16,13 +15,14 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * UserRepository 의 insert / findBy / update 동작을 실제 MySQL(local, 13306)에서 검증.
+ * UserRepository 의 insert / findBy / update 동작을 격리된 test 프로필 DB에서 검증.
+ * test 프로필(application-test.yml)이 엔티티로 스키마를 생성(create-drop)하므로
+ * MySQL/SQLite 어느 환경에서도 사전 스키마 없이 돌아가고, 개발 데이터와 격리된다.
  * @DataJpaTest 라 각 테스트는 트랜잭션 후 롤백 → 데이터 오염 없음.
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@ActiveProfiles("local")
-@TestPropertySource(properties = ["spring.jpa.hibernate.ddl-auto=validate"])
+@ActiveProfiles("test")
 class UserRepositoryTest @Autowired constructor(
     private val userRepository: UserRepository,
 ) {

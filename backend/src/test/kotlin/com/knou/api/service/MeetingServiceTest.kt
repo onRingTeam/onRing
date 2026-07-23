@@ -1,5 +1,6 @@
 package com.knou.api.service
 
+import com.knou.api.client.GeminiClient
 import com.knou.api.entity.MeetingEntity
 import com.knou.api.repository.MeetingAttendanceRepository
 import com.knou.api.repository.MeetingRepository
@@ -7,7 +8,9 @@ import com.knou.api.repository.UserRepository
 import com.knou.api.websocket.MeetingChatBuffer
 import com.knou.api.websocket.MeetingSummaryMissingEvent
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.mockito.kotlin.any
+import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.eq
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.never
@@ -28,8 +31,10 @@ class MeetingServiceTest {
     private val attendanceRepository = mock<MeetingAttendanceRepository>()
     private val chatBuffer = mock<MeetingChatBuffer>()
     private val eventPublisher = mock<ApplicationEventPublisher>()
+    // 기본은 키 설정된 상황(운영·재생성 경로). 키 미설정 케이스는 개별 테스트에서 재정의.
+    private val geminiClient = mock<GeminiClient> { on { isConfigured() } doReturn true }
     private val service = MeetingService(
-        meetingRepository, userRepository, attendanceRepository, chatBuffer, eventPublisher,
+        meetingRepository, userRepository, attendanceRepository, chatBuffer, eventPublisher, geminiClient,
     )
 
     private fun meeting(id: Long, status: String, summary: String?) = MeetingEntity(
@@ -67,5 +72,17 @@ class MeetingServiceTest {
         service.detail(1)
 
         verify(eventPublisher, never()).publishEvent(any())
+    }
+
+    @Test
+    fun `detail - 키 미설정이면 재생성 미트리거 + 요약 자리에 설정 안내 노출`() {
+        whenever(geminiClient.isConfigured()).thenReturn(false)
+        whenever(meetingRepository.findById(1)).thenReturn(Optional.of(meeting(1, "ENDED", null)))
+        whenever(attendanceRepository.findAllByMeeting_MeetingId(1)).thenReturn(emptyList())
+
+        val detail = service.detail(1)
+
+        verify(eventPublisher, never()).publishEvent(any())
+        assertTrue(detail.summary?.contains("GEMINI_API_KEY") == true)
     }
 }

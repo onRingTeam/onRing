@@ -40,7 +40,16 @@ class MeetingService(
     private val attendanceRepository: MeetingAttendanceRepository,
     private val chatBuffer: MeetingChatBuffer,
     private val eventPublisher: ApplicationEventPublisher,
+    private val geminiClient: com.knou.api.client.GeminiClient,
 ) {
+
+    private companion object {
+        /** GEMINI_API_KEY 미설정(주로 로컬) 시 요약 자리에 대신 노출할 안내 문구. */
+        const val SUMMARY_KEY_MISSING_NOTICE =
+            "⚠️ AI 요약을 사용하려면 GEMINI_API_KEY 가 필요합니다.\n" +
+                "backend/.env 에 GEMINI_API_KEY=발급키 를 추가한 뒤 서버를 다시 실행하고, " +
+                "회의 상세를 다시 열면 요약이 생성됩니다."
+    }
 
     /**
      * 신규 회의 생성. 회의 코드('날짜+회의명 첫글자+UUID')를 자동 생성하고,
@@ -243,9 +252,18 @@ class MeetingService(
         }
         val languageCount = attendances.mapNotNull { it.translateLanguage }.distinct().size
 
-        // 종료됐는데 요약이 없으면 온디맨드 재생성 트리거 (실제 작업은 @Async 리스너가 별도 스레드에서 수행)
-        if (meeting.status == MeetingStatus.ENDED.name && meeting.summary == null) {
+        // 종료됐는데 요약이 없을 때의 처리.
+        //  - 키 있음: 온디맨드 재생성 트리거 (실제 작업은 @Async 리스너가 별도 스레드에서 수행)
+        //  - 키 없음(주로 로컬): 재생성해도 계속 실패하므로 트리거하지 않고, 요약 자리에 설정 안내를 노출한다.
+        val summaryMissing = meeting.status == MeetingStatus.ENDED.name && meeting.summary == null
+        val keyConfigured = geminiClient.isConfigured()
+        if (summaryMissing && keyConfigured) {
             eventPublisher.publishEvent(MeetingSummaryMissingEvent(meetingId))
+        }
+        val summaryText = when {
+            meeting.summary != null -> meeting.summary
+            summaryMissing && !keyConfigured -> SUMMARY_KEY_MISSING_NOTICE
+            else -> null
         }
 
         return MeetingDetailResponse(
@@ -255,7 +273,7 @@ class MeetingService(
             participantCount = attendances.size,
             languageCount = languageCount,
             durationSec = meeting.durationSec,
-            summary = meeting.summary,
+            summary = summaryText,
             speakers = speakers,
         )
     }
