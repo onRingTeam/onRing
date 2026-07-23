@@ -241,7 +241,7 @@ npm run web
 
 ## 📚 문서
 
-- [`docs/실행가이드.md`](docs/실행가이드.md) — 실행·설치 매뉴얼 (**APK 직접 설치** 포함)
+- [`docs/실행가이드.md`](docs/실행가이드.md) · [`docs/onRing_실행가이드.pdf`](docs/onRing_실행가이드.pdf) — 실행·설치 매뉴얼 (**APK 직접 설치** 포함)
 - [`docs/구현계획.md`](docs/구현계획.md) — 구현 로드맵
 - [`docs/음성통화-접근성-회의-설계.md`](docs/음성통화-접근성-회의-설계.md) — WebRTC·STT·STOMP·TTS 파이프라인 설계
 - [`docs/회의-AI요약-설계.md`](docs/회의-AI요약-설계.md) — AI 요약 설계
