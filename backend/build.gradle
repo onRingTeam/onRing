@@ -31,6 +31,9 @@ dependencies {
 	implementation 'org.jetbrains.kotlin:kotlin-reflect'
 	// mysql
 	runtimeOnly 'com.mysql:mysql-connector-j'
+	// sqlite (무설정 로컬 실행용 - local 프로필) : JDBC 드라이버 + Hibernate SQLite 방언
+	runtimeOnly 'org.xerial:sqlite-jdbc:3.49.1.0'
+	runtimeOnly 'org.hibernate.orm:hibernate-community-dialects'
 	// jpa
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 

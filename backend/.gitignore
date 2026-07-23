@@ -40,3 +40,7 @@ out/
 .kotlin
 
 .env
+
+# SQLite 로컬 DB (local 프로필) — 파일은 무시하되 data/ 디렉토리는 .gitkeep 으로 유지
+data/*.db
+data/*.db-*
