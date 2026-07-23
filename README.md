@@ -6,7 +6,7 @@
 </div>
 
 # onRing · 다국어 실시간 소통 회의 앱
-
+### notion👉[LINK](https://app.notion.com/p/OnRing-22e3a719d350820d9b84012ddd7e8291?source=copy_link)
 > **언어의 장벽을 끄고, 소통의 링을 켜다.**
 
 ## 📝 프로젝트 개요
