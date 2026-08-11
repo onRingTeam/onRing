@@ -253,6 +253,7 @@ npm run web
 2. 변경 커밋 (명확한 메시지)
 3. `dev` 브랜치로 Pull Request 생성
 
+## [시연 영상 바로가기](https://youtu.be/VNs8Pi7HVJo)
 ---
 
 <div align="center">
